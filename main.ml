@@ -168,7 +168,7 @@ let htmlescape s =
 	s
 
 let reserved_flags = [
-	"cross";"js";"neko";"flash";"php";"cpp";"cs";"java";"python";
+	"cross";"js";"lua";"neko";"flash";"php";"cpp";"cs";"java";"python";
 	"as3";"swc";"macro";"sys"
 	]
 
@@ -978,7 +978,7 @@ and do_connect host port args =
 
 and init ctx =
 	let usage = Printf.sprintf
-		"Haxe Compiler %s - (C)2005-2015 Haxe Foundation\n Usage : haxe%s -main <class> [-swf|-js|-neko|-php|-cpp|-as3] <output> [options]\n Options :"
+		"Haxe Compiler %s - (C)2005-2015 Haxe Foundation\n Usage : haxe%s -main <class> [-swf|-js|-lua|-neko|-php|-cpp|-as3] <output> [options]\n Options :"
 		s_version (if Sys.os_type = "Win32" then ".exe" else "")
 	in
 	let com = ctx.com in
@@ -1051,6 +1051,7 @@ try
 			com.class_path <- normalize_path path :: com.class_path
 		),"<path> : add a directory to find source files");
 		("-js",Arg.String (set_platform Js),"<file> : compile code to JavaScript file");
+		("-lua",Arg.String (set_platform Lua),"<file> : compile code to Lua file");
 		("-swf",Arg.String (set_platform Flash),"<file> : compile code to Flash SWF file");
 		("-as3",Arg.String (fun dir ->
 			set_platform Flash dir;
@@ -1434,6 +1435,9 @@ try
 		| Js ->
 			add_std "js";
 			"js"
+		| Lua ->
+			add_std "lua";
+			"lua"
 		| Php ->
 			add_std "php";
 			"php"
@@ -1547,6 +1551,8 @@ try
 					Genneko.generate,"neko"
 				| Js ->
 					Genjs.generate,"js"
+				| Lua ->
+					Genlua.generate,"lua"
 				| Php ->
 					Genphp.generate,"php"
 				| Cpp ->
