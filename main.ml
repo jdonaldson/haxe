@@ -168,7 +168,7 @@ let htmlescape s =
 	s
 
 let reserved_flags = [
-	"cross";"flash8";"js";"neko";"flash";"php";"cpp";"cs";"java";"python";
+    "cross";"flash8";"js";"lua";"neko";"flash";"php";"cpp";"cs";"java";"python";
 	"as3";"swc";"macro";"sys"
 	]
 
@@ -965,7 +965,7 @@ and do_connect host port args =
 
 and init ctx =
 	let usage = Printf.sprintf
-		"Haxe Compiler %s %s- (C)2005-2014 Haxe Foundation\n Usage : haxe%s -main <class> [-swf|-js|-neko|-php|-cpp|-as3] <output> [options]\n Options :"
+		"Haxe Compiler %s %s- (C)2005-2014 Haxe Foundation\n Usage : haxe%s -main <class> [-swf|-js|-lua|-neko|-php|-cpp|-as3] <output> [options]\n Options :"
 		s_version (match Version.version_extra with None -> "" | Some v -> v) (if Sys.os_type = "Win32" then ".exe" else "")
 	in
 	let com = ctx.com in
@@ -1038,6 +1038,7 @@ try
 			com.class_path <- normalize_path path :: com.class_path
 		),"<path> : add a directory to find source files");
 		("-js",Arg.String (set_platform Js),"<file> : compile code to JavaScript file");
+		("-lua",Arg.String (set_platform Lua),"<file> : compile code to Lua file");
 		("-swf",Arg.String (set_platform Flash),"<file> : compile code to Flash SWF file");
 		("-as3",Arg.String (fun dir ->
 			set_platform Flash dir;
@@ -1428,6 +1429,9 @@ try
 		| Js ->
 			add_std "js";
 			"js"
+		| Lua ->
+			add_std "lua";
+			"lua"
 		| Php ->
 			add_std "php";
 			"php"
@@ -1539,6 +1543,9 @@ try
 		| Js ->
 			Common.log com ("Generating js : " ^ com.file);
 			Genjs.generate com
+		| Lua ->
+			Common.log com ("Generating lua : " ^ com.file);
+			Genlua.generate com
 		| Php ->
 			Common.log com ("Generating PHP in : " ^ com.file);
 			Genphp.generate com;
