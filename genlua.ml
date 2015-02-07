@@ -76,7 +76,9 @@ let kwds =
 		"finally"; "float"; "for"; "function"; "goto"; "if"; "implements"; "import"; "in"; "instanceof"; "int";
 		"interface"; "is"; "let"; "long"; "namespace"; "native"; "new"; "nil"; "package"; "private"; "protected";
 		"public"; "return"; "short"; "static"; "super"; "switch"; "synchronized"; "this"; "throw"; "throws";
-		"transient"; "true"; "try"; "typeof"; "use"; "var"; "void"; "volatile"; "while"; "with"; "yield"
+		"transient"; "true"; "try"; "typeof"; "use"; "var"; "void"; "volatile"; "while"; "with"; "yield";
+		(* Lua keywords *)
+		"and"; "elseif"; "end"; "local"; "not"; "or"; "repeat"; "then"; "until"; "_G"; "self"
 	];
 	h
 
