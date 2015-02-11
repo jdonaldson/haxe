@@ -107,6 +107,7 @@ module Meta = struct
 		| KeepInit
 		| KeepSub
 		| LibType
+		| LuaRequire
 		| Meta
 		| Macro
 		| MaybeUsed
