@@ -105,6 +105,17 @@ class Log {
 				str = v;
 			}
 			python.Lib.println(str);
+		#elseif (lua)
+			untyped __lua__('
+			local i = infos
+			if(i and i.fileName and i.customParams)then
+				_G.print(i.fileName .. ":" + i.lineNumber + ": " + v + "," + i.customParams:join(","))
+			elseif(i and i.fileName)then
+				_G.print(i.fileName .. ":" + i.lineNumber + ": " + v)
+			else
+				_G.print(v)
+				if(i) then _G.print(i) end
+			end');
 		#end
 	}
 
