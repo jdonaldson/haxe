@@ -24,6 +24,15 @@ package lua;
 class Lib
 {
 
+
+	inline static public function setmetatable<T>(obj:T, mt:Class<Dynamic>):T
+	return (untyped __call__("setmetatable",obj,mt));
+
+	inline static public function setmetatabledef<T>(obj:T, mt:Metatable):T
+	return (untyped __call__("setmetatable",obj,mt));
+
+	inline static public function getmetatable<T>(obj:T):Metatable
+	return (untyped __call__("getmetatable",obj));
 	/**
 		Inserts a 'debugger' statement that will make a breakpoint if a debugger is available.
 	**/
