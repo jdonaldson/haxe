@@ -1,5 +1,5 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -75,30 +75,22 @@ let s_path ctx = if ctx.js_flatten then flat_path else dot_path
 let kwds =
 	let h = Hashtbl.create 0 in
 	List.iter (fun s -> Hashtbl.add h s ()) [
-		"abstract"; "as"; "boolean"; "break"; "byte"; "case"; "catch"; "char"; "class"; "continue"; "const";
-		"debugger"; "default"; "delete"; "do"; "double"; "else"; "enum"; "export"; "extends"; "false"; "final";
-		"finally"; "float"; "for"; "function"; "goto"; "if"; "implements"; "import"; "in"; "instanceof"; "int";
-		"interface"; "is"; "let"; "long"; "namespace"; "native"; "new"; "null"; "package"; "private"; "protected";
-		"public"; "return"; "short"; "static"; "super"; "switch"; "synchronized"; "this"; "throw"; "throws";
-		"transient"; "true"; "try"; "typeof"; "use"; "var"; "void"; "volatile"; "while"; "with"; "yield";
-
 		"nil"; "end"; "until"; "repeat"; "and"; "not"; "or";
+		"elseif"; "local"; "then"; "true"; "this"; "while";
+		"return"; "null"; "break"; "continue"; "false"; "else"; "do";
+		"for"; "function"; "goto"; "if"; "in"; "super";
 
 		(* TODO move everything to _G!!! *)
+
 	];
 	h
 
-(* Identifiers Haxe reserves to make the JS output cleaner. These can still be used in untyped code (TLocal),
+(* Identifiers Haxe reserves to make the output cleaner. These can still be used in untyped code (TLocal),
    but are escaped upon declaration. *)
 let kwds2 =
 	let h = Hashtbl.create 0 in
 	List.iter (fun s -> Hashtbl.add h s ()) [
-		(* https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects *)
-		"Infinity"; "NaN"; "decodeURI"; "decodeURIComponent"; "encodeURI"; "encodeURIComponent";
-		"escape"; "eval"; "isFinite"; "isNaN"; "parseFloat"; "parseInt"; "undefined"; "unescape";
-
-		"JSON"; "Number"; "Object"; "console"; "window"; "require"; "_G";
-		"pcall"; "bit"; "setmetatable"; "error"; "print"; "string";
+		"_G"; "self"; "bit"; "_r";
 	];
 	h
 
@@ -278,7 +270,7 @@ let rec gen_call ctx e el in_value =
 		(match ctx.current.cl_super with
 		| None -> error "Missing api.setCurrentClass" e.epos
 		| Some (c,_) ->
-			print ctx "%s.call(%s" (ctx.type_accessor (TClassDecl c)) (this ctx);
+			print ctx "%s.super(%s" (ctx.type_accessor (TClassDecl c)) (this ctx);
 			List.iter (fun p -> print ctx ","; gen_value ctx p) params;
 			spr ctx ")";
 		);
@@ -287,10 +279,23 @@ let rec gen_call ctx e el in_value =
 		| None -> error "Missing api.setCurrentClass" e.epos
 		| Some (c,_) ->
 			let name = field_name f in
-			print ctx "%s.prototype%s.call(%s" (ctx.type_accessor (TClassDecl c)) (field name) (this ctx);
+			print ctx "%s%s(%s" (ctx.type_accessor (TClassDecl c)) (field name) (this ctx);
 			List.iter (fun p -> print ctx ","; gen_value ctx p) params;
 			spr ctx ")";
 		);
+
+	| TCall ({eexpr = TField(e,((FInstance _ | FAnon _) as ef)) }, _), el ->
+		gen_value ctx e;
+		print ctx ":%s(" (field_name ef);
+		concat ctx "," (gen_value ctx) el;
+		spr ctx ")";
+
+	| TField (e, ((FInstance _ | FAnon _) as ef)), el ->
+		gen_value ctx e;
+		print ctx ":%s(" (field_name ef);
+		concat ctx "," (gen_value ctx) el;
+		spr ctx ")"
+
 	| TCall (x,_) , el when (match x.eexpr with TLocal { v_name = "__js__" } -> false | _ -> true) ->
 		spr ctx "(";
 		gen_value ctx e;
@@ -302,6 +307,32 @@ let rec gen_call ctx e el in_value =
 		print ctx "%s.new(" cl;
 		concat ctx "," (gen_value ctx) params;
 		spr ctx ")";
+	| TLocal { v_name = "__call__" }, { eexpr = TConst (TString cl) } :: params -> (* TODO doc *)
+		print ctx "%s(" cl;
+		concat ctx "," (gen_value ctx) params;
+		spr ctx ")";
+	| TLocal { v_name = "__call__" }, e :: params -> (* TODO doc *)
+		gen_value ctx e;
+		spr ctx "(";
+		concat ctx "," (gen_value ctx) params;
+		spr ctx ")";
+	| TLocal { v_name = "__tail__" }, cl :: f :: params -> (* TODO doc *)
+		gen_value ctx cl;
+		spr ctx ":";
+		gen_value ctx f;
+		spr ctx "(";
+		concat ctx "," (gen_value ctx) params;
+		spr ctx ")";
+	| TLocal { v_name = "__pack__" }, obj :: params -> (* TODO doc *)
+		spr ctx "{";
+		gen_value ctx obj;
+		spr ctx "}";
+	| TLocal { v_name = "__global__" }, cl :: params -> (* TODO doc *)
+		spr ctx "_G.";
+		gen_value ctx cl;
+		spr ctx "(";
+		concat ctx "," (gen_value ctx) params;
+		spr ctx ")";
 	| TLocal { v_name = "__new__" }, e :: params ->
 		gen_value ctx e;
 		spr ctx ".new(";
@@ -311,6 +342,10 @@ let rec gen_call ctx e el in_value =
 		spr ctx (this ctx)
 	| TLocal { v_name = "__lua__" }, [{ eexpr = TConst (TString code) }] ->
 		spr ctx (String.concat "\n" (ExtString.String.nsplit code "\r\n"))
+	| TLocal { v_name = "__hash__" }, e :: params -> (* TODO doc *)
+		spr ctx "(#"; gen_value ctx e;
+		List.iter (fun el -> spr ctx " + #"; (gen_value ctx el)) params;
+		spr ctx ")"
 	| TLocal { v_name = "__js__" }, { eexpr = TConst (TString code); epos = p } :: tl ->
 		Codegen.interpolate_code ctx.com code tl (spr ctx) (gen_expr ctx) p
 	| TLocal { v_name = "__instanceof__" },  [o;t] ->
@@ -425,11 +460,11 @@ and gen_expr ctx e =
 			| _ -> print ctx " %s " (Ast.s_binop o));
 			gen_value ctx e2;
 		)
-	| TField (x,f) when field_name f = "iterator" && is_dynamic_iterator ctx e ->
+	(*| TField (x,f) when field_name f = "iterator" && is_dynamic_iterator ctx e ->
 		add_feature ctx "use.Qiterator";
 		print ctx "Qiterator(";
 		gen_value ctx x;
-		print ctx ")";
+		print ctx ")";*)
 	| TField (x,FClosure (Some ({cl_path=[],"Array"},_), {cf_name="push"})) ->
 		(* see https://github.com/HaxeFoundation/haxe/issues/1997 *)
 		add_feature ctx "use.QarrayPushClosure";
@@ -534,8 +569,9 @@ and gen_expr ctx e =
 		gen_call ctx e el false
 	| TArrayDecl el ->
 		spr ctx "setmetatable({";
+		if List.length el > 0 then spr ctx "[0]=";
 		concat ctx "," (gen_value ctx) el;
-		spr ctx "},{})"
+		spr ctx "},Array)"
 	| TThrow e ->
 		spr ctx "error(";
 		gen_value ctx e;
@@ -551,7 +587,7 @@ and gen_expr ctx e =
 				gen_value ctx e
 		end
 	| TNew ({ cl_path = [],"Array" },_,[]) ->
-		print ctx "{}"
+		print ctx "setmetatable({},Array)"
 	| TNew (c,_,el) ->
 		(match c.cl_constructor with
 		| Some cf when Meta.has Meta.SelfCall cf.cf_meta -> ()
@@ -571,16 +607,17 @@ and gen_expr ctx e =
 			| _ -> gen_value ctx cond
 		);
 		spr ctx ") then ";
-		gen_expr ctx e;
+		(*gen_expr ctx e;*) gen_block_element ctx e;
 		(match eelse with
 		| None -> ()
 		| Some e2 ->
 			(match e.eexpr with
 			| TObjectDecl _ -> ctx.separator <- false
 			| _ -> ());
-			semicolon ctx;
+			(*semicolon ctx;*)
 			spr ctx " else ";
-			gen_expr ctx e2);
+			(*gen_expr ctx e2*) gen_block_element ctx e2
+		);
 		spr ctx " end";
 	| TUnop ((Increment|Decrement) as op,_,e) ->
 		gen_expr ctx e;
@@ -588,7 +625,7 @@ and gen_expr ctx e =
 		gen_expr ctx e;
 		(match op with (* TODO as-a-value *)
 			| Increment -> print ctx " + 1"
-			| Decrement -> print ctx " - 1"
+			| _ -> print ctx " - 1"
 		)
 	| TUnop (Not,_,e) ->
 		spr ctx "not ";
@@ -765,7 +802,19 @@ and gen_expr ctx e =
 
 and gen_block_element ?(after=false) ctx e =
 	match e.eexpr with
-	| TConst _ | TLocal _ -> ()
+	| TConst _ | TLocal _ | TField _ -> ()
+	| TUnop ((Increment|Decrement),_,_) -> newline ctx; gen_expr ctx e
+	| TUnop (_,_,ue) -> gen_block_element ctx ue
+	| TParenthesis pe -> gen_block_element ctx pe
+	| TBinop (op,e1,e2) ->
+		(match op with
+			| Ast.OpAssign | Ast.OpAssignOp(_) ->
+				if not after then newline ctx;
+				gen_expr ctx e;
+				spr ctx ";";
+				if after then newline ctx
+			| _ -> gen_block_element ctx e2; gen_block_element ctx e1
+		)
 	| TArrayDecl el -> concat ctx " " (gen_block_element ctx) el;
 	| TNew ({ cl_path = [],"Array" },_,[]) -> ()
 	| TBlock el ->
@@ -784,6 +833,7 @@ and gen_block_element ?(after=false) ctx e =
 	| _ ->
 		if not after then newline ctx;
 		gen_expr ctx e;
+		spr ctx ";";
 		if after then newline ctx
 
 and gen_value ctx e =
@@ -894,9 +944,11 @@ and gen_value ctx e =
 			| TParenthesis e -> e
 			| _ -> cond
 		) in
+		spr ctx "(";
 		(match e.eexpr with
-			| TConst c ->
-				spr ctx "((";
+			(* WARN using anything that can be equal to `false` breaks this logic *)
+			| TConst(TInt _ | TFloat _ | TString _ | TThis | TSuper) ->
+				spr ctx "(";
 				gen_value ctx cond;
 				spr ctx ")and(";
 				gen_value ctx e;
@@ -904,9 +956,20 @@ and gen_value ctx e =
 				(match eo with
 				| None -> spr ctx "nil"
 				| Some e -> gen_value ctx e);
-				spr ctx "))";
-			| _ -> spr ctx "(#TERNAR)";
-		)
+				spr ctx ")";
+			| _ ->
+				spr ctx "(function() if(";
+				gen_value ctx cond;
+				spr ctx ") then return (";
+				gen_value ctx e;
+				spr ctx ") else return ";
+				(match eo with
+				| None -> spr ctx "nil"
+				| Some e -> gen_value ctx e);
+				spr ctx " end end)()";
+			| _ -> spr ctx "#TERNAR";
+		);
+		spr ctx ")";
 
 		(* TODO
 		gen_value ctx cond;
@@ -1076,8 +1139,53 @@ let generate_class ctx c =
 		| _ ->
 			(match c.cl_constructor with
 			| Some { cf_expr = Some e } ->
-				print ctx "{} %s.new = " p;
-				gen_expr ctx e
+				print ctx "{}";
+
+				(* inheritance *)
+				let has_class : bool = has_feature ctx "js.Boot.getClass" && (c.cl_super <> None || c.cl_ordered_fields <> [] || c.cl_constructor <> None) in
+				let has_prototype : bool = c.cl_super <> None || has_class || List.exists (can_gen_class_field ctx) c.cl_ordered_fields in
+				if has_prototype then begin
+					(match c.cl_super with
+					| None -> ()
+					| Some (csup,_) ->
+						let psup : string = ctx.type_accessor (TClassDecl csup) in
+						print ctx "\nextend(%s,%s) " p psup;
+						print ctx "%s.__super__ = %s" p psup;
+						newline ctx;
+					);
+				end;
+
+				(match e.eexpr with | TFunction f ->
+					(* constructor just creates object and calls super() to init it *)
+					print ctx "%s.__index = %s %s.new = " p p p;
+					print ctx "function(%s)" (String.concat "," (List.map ident (List.map arg_name f.tf_args)));
+					print ctx "\nlocal self = setmetatable({}, %s)" p;
+					print ctx "%s.super(self" p;
+
+					if List.length f.tf_args > 0 then
+					print ctx ",%s" (String.concat "," (List.map ident (List.map arg_name f.tf_args)));
+
+					print ctx ") return self end";
+
+					(* initializer *)
+					print ctx "\n%s.super = " p;
+					spr ctx "function(self";
+					if List.length f.tf_args > 0 then
+					print ctx ",%s" (String.concat "," (List.map ident (List.map arg_name f.tf_args)));
+					spr ctx ")";
+					let fexpr : texpr = (fun_block ctx f e.epos) in
+					(match fexpr.eexpr with
+						| TBlock el ->
+							let bend = open_block ctx in
+							List.iter (gen_block_element ctx) el;
+							bend();
+							newline ctx
+						| _ -> gen_value ctx fexpr
+					);
+					print ctx "return self end";
+
+				| _ -> ());
+
 			| _ -> (print ctx "{}"); ctx.separator <- true)
 	);
 	newline ctx;
@@ -1115,9 +1223,9 @@ let generate_class ctx c =
 		| None -> print ctx "--[[%s.prototype]]" p;
 		| Some (csup,_) ->
 			let psup = ctx.type_accessor (TClassDecl csup) in
-			print ctx "%s.__super__ = %s" p psup;
+			print ctx "--%s.__super__ = %s" p psup;
 			newline ctx;
-			print ctx "%s.prototype = _G.extend(%s.prototype,{" p psup;
+			print ctx "--%s.prototype = _G.extend(%s.prototype,{})" p psup;
 		);
 
 		(*let bend = open_block ctx in*)
@@ -1142,7 +1250,7 @@ let generate_class ctx c =
 
 		(*bend();*)
 		print ctx "\n";
-		(match c.cl_super with None -> ctx.separator <- true | _ -> print ctx ")");
+		(match c.cl_super with None -> ctx.separator <- true | _ -> print ctx "");
 		newline ctx
 	end
 
@@ -1158,8 +1266,11 @@ let generate_enum ctx e =
 	if has_feature ctx "Type.resolveEnum" then print ctx "\n--QhxClasses[\"%s\"] = \n" (dot_path e.e_path);
 
 	print ctx "{";
-	if has_feature ctx "js.Boot.isEnum" then print ctx " __ename__ = %s," (if has_feature ctx "Type.getEnumName" then "{" ^ String.concat "," ename ^ "}" else "true");
+	if has_feature ctx "js.Boot.isEnum" then print ctx "__super__ = Enum, __ename__ = %s," (if has_feature ctx "Type.getEnumName" then "{" ^ String.concat "," ename ^ "}" else "true");
 	print ctx " __constructs__ = {%s} }" (String.concat "," (List.map (fun s -> Printf.sprintf "\"%s\"" s) e.e_names));
+
+	print ctx ("\n%s.new = Enum.new") p;
+
 	ctx.separator <- true;
 	newline ctx;
 	List.iter (fun n ->
@@ -1168,16 +1279,14 @@ let generate_enum ctx e =
 		(match f.ef_type with
 		| TFun (args,_) ->
 			let sargs = String.concat "," (List.map (fun (n,_,_) -> ident n) args) in
-			print ctx "function(%s) local Qx = {\"%s\",%d,%s}; Qx.__enum__ = %s;" sargs f.ef_name f.ef_index sargs p;
-			if has_feature ctx "may_print_enum" then
-				spr ctx " Qx.toString = Qestr;";
-			spr ctx " return Qx; end";
+			print ctx "function(%s) return Enum.new(\"%s\",%d,{[0]=%s}) end" sargs f.ef_name f.ef_index sargs;
+			if has_feature ctx "may_print_enum" then spr ctx "";
 			ctx.separator <- true;
 		| _ ->
-			print ctx "{\"%s\",%d}" f.ef_name f.ef_index;
+			print ctx "setmetatable({[0]=\"%s\",[1]=%d},Enum)" f.ef_name f.ef_index;
 			newline ctx;
 			if has_feature ctx "may_print_enum" then begin
-				print ctx "%s%s.toString = Qestr" p (field f.ef_name);
+				print ctx "-- %s%s = __tostring" p (field f.ef_name);
 				newline ctx;
 			end;
 			print ctx "%s%s.__enum__ = %s" p (field f.ef_name) p;
@@ -1296,6 +1405,25 @@ let generate com =
 	| None ->
 	let ctx = alloc_ctx com in
 
+	(* Lua pre-boot *)
+	spr ctx
+	"
+	function extend(to, base)
+		for k, v in pairs(base) do to[k] = v end
+		to.__super__ = base
+	end
+	Int = Int or {} Number = Number or {} Float = Float or Number; String = String or {};
+	Enum = Enum or {} Enum.new = function(tag,index,params) return setmetatable({
+		[0]=params[0],[1]=index,[2]=params,tag=tag,index=index,params=params
+	},Enum) end;
+	local _ = getmetatable('') function _.__add(a,b) return Std.string(a) .. Std.string(b) end
+	_.__index = function(str, p) if (p == 'length') then return string.len(str) else return String[p] end end
+
+	_ = nil;
+
+	";
+
+
 	if has_feature ctx "Class" || has_feature ctx "Type.getClassName" then add_feature ctx "lua.Boot.isClass";
 	if has_feature ctx "Enum" || has_feature ctx "Type.getEnumName" then add_feature ctx "lua.Boot.isEnum";
 
@@ -1386,7 +1514,7 @@ let generate com =
 	let vars = [] in
 	let vars = (if has_feature ctx "Type.resolveClass" || has_feature ctx "Type.resolveEnum" then ("QhxClasses = " ^ (if ctx.js_modern then "{}" else "QhxClasses || {}")) :: vars else vars) in
 	let vars = if has_feature ctx "may_print_enum"
-		then ("Qestr = function() return " ^ (ctx.type_accessor (TClassDecl { null_class with cl_path = ["js"],"Boot" })) ^ ".__string_rec(this,''); end") :: vars
+		then ("estr = function() end") :: vars
 		else vars in
 	(match List.rev vars with
 	| [] -> ()
@@ -1440,18 +1568,33 @@ end
 	spr ctx
 	"
 	pcall(require, 'bit32') pcall(require, 'bit') bit = bit or bit32
-	print = print or (function()end)
-	local _ = getmetatable('') function _.__add(a,b) return Std.string(a) .. Std.string(b) end
-	_.__index = function(str, p) if (p == 'length') then return string.len(str) else return String[p] end end
-	_ = nil
+	print = print or (function()end);
+	(Array or {}).__index = function(self, p)
+	if (p == 'length') then local len = 0
+		for k in pairs(self) do
+			len = math.max(len, k+1)
+		end
+		return len else return Array[p] end
+	end
 	Std = Std or {} function Std.string(s)
 		local t = type(s) if t == 'string' then return s
 		elseif s == nil then return 'null'
 		elseif t == 'function' then return '<function>'
 		elseif t == 'userdata' or t == 'thread' then return t
-		end	return tostring(s)
+		elseif t == 'table' and type(s.toString) == 'function' then return s:toString() or 'null' end
+		return tostring(s)
 	end
-
+	Enum = Enum or {} function Enum.__tostring(e)
+		if e.params == nil then return (e.tag or '') .. rawget(e, 0) end
+		local i = 0; local s = '('
+		while e.params[i] do
+			if s ~= '(' then s = s .. ',' end
+			s = s + e.params[i]
+			i = i + 1
+		end
+		return (e.tag or '') .. s .. ')'
+	end
+	String.cca = String.charCodeAt
 	";
 
 	(match com.main with
