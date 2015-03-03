@@ -1,5 +1,5 @@
 /*
-* Copyright (C)2005-2013 Haxe Foundation
+* Copyright (C)2005-2015 Haxe Foundation
 *
 * Permission is hereby granted, free of charge, to any person obtaining a
 * copy of this software and associated documentation files (the "Software"),
@@ -20,115 +20,56 @@
 * DEALINGS IN THE SOFTWARE.
 */
 
-#if (macro&&haxe_ver>3.199)
-// Haxe 3.2 compatibility
-import haxe.ds.StringMap;
-import haxe.ds.IntMap;
-import haxe.ds.HashMap;
-import haxe.ds.ObjectMap;
-import haxe.ds.WeakMap;
-import haxe.ds.EnumValueMap;
-import haxe.Constraints.IMap;
-@: multiType(K)
-abstract Map<K, V>(IMap<K, V> )
+@: keep // this class is used for Dynamic representation
+private class MapMetatable < K, V > implements haxe.Constraints.IMap<K, V>
 {
-	public function new();
-	public inline function set(key: K, value: V) this.set(key, value);
-	@: arrayAccess public inline function get(key: K) return this.get(key);
-	public inline function exists(key: K) return this.exists(key);
-	public inline function remove(key: K) return this.remove(key);
-	public inline function keys(): Iterator<K>
-	return this.keys();
-	public inline function iterator(): Iterator<V>
-	return this.iterator();
-	public inline function toString(): String
-	return this.toString();
-	@: arrayAccess @: noCompletion public inline function arrayWrite(k: K, v: V): V
-	{
-		this.set(k, v);
-		return v;
-	}
-	@: to static inline function toStringMap<V>(t: IMap<String, V>): StringMap<V>
-	return new StringMap<V>();
-	@: to static inline function toIntMap<V>(t: IMap<Int, V>): IntMap<V>
-	return new IntMap<V>();
-	@: to static inline function toEnumValueMapMap<K: EnumValue, V>
-	(t: IMap<K, V>): EnumValueMap<K, V>
-	return new EnumValueMap<K, V>();
-	@: to static inline function toObjectMap < K: { }, V > (t: IMap<K, V>): ObjectMap<K, V>
-	return new ObjectMap<K, V>();
-	@: from static inline function fromStringMap<V>(map: StringMap<V>): Map< String, V >
-	return cast map;
-	@: from static inline function fromIntMap<V>(map: IntMap<V>): Map< Int, V >
-	return cast map;
-	@: from static inline function fromObjectMap < K: { }, V > (map: ObjectMap<K, V>):
-	Map<K, V>
-	return cast map;
-}
-@: deprecated
-typedef IMap<K, V> = haxe.Constraints.IMap<K, V>;
-#end
+	public function exists(k: K): Bool return cast(this, Map<Dynamic, Dynamic>).exists(k);
+	public function get(k: K): Null<V> return cast(this, Map<Dynamic, Dynamic>).get(k);
+	public function iterator(): Iterator<V>
+	return cast(this, Map<Dynamic, Dynamic>).iterator();
+	public function keys(): Iterator<K> return cast(this, Map<Dynamic, Dynamic>).keys();
+	public function remove(k: K): Bool return cast(this, Map<Dynamic, Dynamic>).remove(k);
+	public function set(k: K, v: V): Void cast(this, Map<Dynamic, Dynamic>).set(k, v);
+	public function toString(): String return __tostring(cast this);
 
-#if (!macro||haxe_ver<3.199)
-
-interface IMap<K, V>
-{
-	function exists(k: K): Bool;
-	function get(k: K): Null<V>;
-	function iterator(): Iterator<V>;
-	function keys(): Iterator<K>;
-	function remove(k: K): Bool;
-	function set(k: K, v: V): Void;
-	function toString(): String;
+	public static function __tostring(map: Map < {}, {} > ) return map.toString();
+	public static var __index = MapMetatable;
 }
 
-abstract Map<K, V>(IMap<K, V>)
+abstract Map<K, V>(haxe.Constraints.IMap<K, V>)
 {
+	public inline function new()
+	this = lua.Lib.setmetatable(untyped __lua__("{}"), MapMetatable);
 
-	public function new() untyped this = {};
-
-	public inline function set(key: K, value: V): V
+	@: arrayAccess public inline function set(key: K, value: V): V
 	{
-		var v = value;
-		untyped this[key] = v;
-		return v;
+		untyped rawset(this, key, value);
+		return value;
 	}
 
-	public inline function get(key: K): V return untyped this[key];
+	@: arrayAccess public inline function get(key: K): V
+	return untyped rawget(this, key);
 
-	@: arrayAccess @: noCompletion public inline function _get(key: K): V return untyped
-			this[key];
-
-	@: arrayAccess @: noCompletion public inline function _set(k: K, value: V): V
-	{
-		var v = value;
-		untyped this[k] = v;
-		return v;
-	}
-
-	public inline function exists(key: K): Bool return untyped this[key] != null;
+	public inline function exists(key: K): Bool return untyped rawget(this, key) != null;
 
 	public function remove(key: Dynamic): Bool
 	{
 		var _has: Bool = exists(key);
-		untyped this[key] = null;
+		untyped rawset(this, key, null);
 		return _has;
 	}
 
 	public function keys(): Iterator<K>
 	{
 		var l = 0;
-		var a = untyped ___lua___("{}");
+		var a = untyped __lua__("{}");
 		var t: Dynamic = this;
 
-		untyped __lua__('for k,v in pairs(t) do
-		a[l] = k;
-		l = l + 1;
-		end');
+		untyped __lua__('for k,v in pairs(t) do a[l] = k; l = l + 1; end');
 
 		var i = 0;
 
-		var ret: Dynamic = untyped ___lua___("{}");
+		var ret: Dynamic = untyped __lua__("{}");
 		ret.next = function(): K {
 			i = i + 1;
 			return a[i - 1];
@@ -143,17 +84,14 @@ abstract Map<K, V>(IMap<K, V>)
 	public function iterator(): Iterator<V>
 	{
 		var l = 0;
-		var a = untyped ___lua___("{}");
+		var a = untyped __lua__("{}");
 		var t: Dynamic = this;
 
-		untyped __lua__('for k,v in pairs(t) do
-		a[l] = v;
-		l = l + 1;
-		end');
+		untyped __lua__('for k,v in pairs(t) do a[l] = v; l = l + 1; end');
 
 		var i = 0;
 
-		var ret: Dynamic = untyped ___lua___("{}");
+		var ret: Dynamic = untyped __lua__("{}");
 		ret.next = function(): K {
 			i = i + 1;
 			return a[i - 1];
@@ -165,10 +103,20 @@ abstract Map<K, V>(IMap<K, V>)
 		return ret;
 	}
 
-	public inline function toString(): String
+	public function toString(): String
 	{
-		return "" + this;
+		if (this == null) return null;
+		var s: String = "{";
+		for (i in keys())
+		{
+			if (s != "{") s += ", ";
+			s = s + i + " => " + untyped rawget(this, i);
+		}
+		return s + "}";
+	}
+
+	@: to public inline function toIMap(): haxe.Constraints.IMap<K, V>
+	{
+		return this;
 	}
 }
-
-#end
