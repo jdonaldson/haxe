@@ -19,55 +19,215 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-@:coreApi
-extern class Array<T> {
+@: coreApi
+class Array<T> implements ArrayAccess<T>
+{
+	public var length(default, null) : Int;
 
-	var length(default,null) : Int;
+	public function new() : Void {};
 
-	function new() : Void;
-	function concat( a : Array<T> ) : Array<T>;
-	function join( sep : String ) : String;
-	function pop() : Null<T>;
-	function push(x : T) : Int;
-	function reverse() : Void;
-	function shift() : Null<T>;
-	function slice( pos : Int, ?end : Int ) : Array<T>;
-	function sort( f : T -> T -> Int ) : Void;
-	function splice( pos : Int, len : Int ) : Array<T>;
-	function toString() : String;
-	function unshift( x : T ) : Void;
-
-	inline function insert( pos : Int, x : T ) : Void {
-		(untyped this).splice(pos,0,x);
+	public function concat( a : Array<T> ) : Array<T>
+	{
+		var result = untyped __lua__("{}");
+		untyped __lua__(
+			"for k,v in pairs(self) do
+			result[k] = v
+			end
+			for i=0,#a do
+			result[#result+1] = a[i]
+			end");
+		return lua.Lib.setmetatable(result, Array);
 	}
 
-	inline function remove( x : T ) : Bool {
-		return @:privateAccess HxOverrides.remove(this,x);
+	public function join( sep : String ) : String
+	{
+		var t = untyped __lua__("{}");
+		untyped __lua__(
+			'for i=0, #self do
+			t[i] = tostring(self[i] or "")
+			end');
+		return (untyped __lua__('table.concat'))(t, sep, 0);
 	}
 
-#if js_es5
-	function indexOf( x : T, ?fromIndex:Int ) : Int;
-	function lastIndexOf( x : T, ?fromIndex:Int ) : Int;
-
-#else
-	inline function indexOf( x : T, ?fromIndex:Int ) : Int {
-		return @:privateAccess HxOverrides.indexOf(this,x,(fromIndex!=null)?fromIndex:0);
+	public function pop() : Null<T>
+	{
+		var length = this.length - 1;
+		var last = untyped this[length];
+		untyped this[length] = null;
+		return last;
 	}
 
-	inline function lastIndexOf( x : T, ?fromIndex:Int ) : Int {
-		return @:privateAccess HxOverrides.lastIndexOf(this,x,(fromIndex!=null)?fromIndex:length-1);
-	}
-#end
-
-	inline function copy() : Array<T> {
-		return (untyped this).slice();
+	public function push(x : T) : Int
+	{
+		var length = this.length;
+		untyped this[length] = x;
+		return length;
 	}
 
-	function map<S>(f:T->S):Array<S>;
-	function filter(f:T->Bool):Array<T>;
+	public function reverse() : Void untyped __lua__(
+		"local length = #self
+		if(length < 2) then return end
+		for i = 0,length/2,1 do
+		local temp = self[i]
+		self[i] = self[length-i]
+		self[length-i] = temp
+		end");
 
-	@:runtime inline function iterator() : Iterator<T> {
-		return untyped HxOverrides.iter(this);
+	public function shift() : Null<T>
+	{
+		var result = this[0];
+		var len = length;
+		for (i in 0...len) this[i] = this[i + 1];
+		this[len - 2] = cast null;
+		return result;
 	}
 
+	public function slice( pos : Int, ? end : Int ) : Array<T>
+	{
+		var result = untyped __lua__("{}");
+		var ends = end;
+		untyped __lua__(
+			"for i = pos,(ends or #self)-1 do
+			result[i] = self[i]
+			end");
+		return lua.Lib.setmetatable(result, Array);
+	}
+
+	public function sort( f : T -> T -> Int ) : Void
+	{
+		untyped __lua__(
+			"local isSorted = false
+			while isSorted == false do
+			movedElements = 0
+			for x = 0, #self - 1, 1 do
+			if f(self[x], self[x + 1]) > 0 then
+			movedElements = movedElements + 1
+			testedElement = self[x]
+			self[x] = self[x + 1]
+			self[x + 1] = testedElement
+			end
+			end
+			if movedElements == 0 then
+			isSorted = true
+			end
+			end");
+	}
+
+	public function splice( pos : Int, len : Int ) : Array<T>
+	{
+		var result = untyped __lua__("{}");
+		untyped __lua__(
+			"for i = pos,len do
+			result[i] = self[i]
+			end
+			for i = pos,len-pos do
+			self[i] = self[i+pos+1]
+			end
+			for i = len,#self do
+			self[i] = nil
+			end");
+		return lua.Lib.setmetatable(result, Array);
+	}
+
+	public function toString() : String
+	{
+		var s = "[ ";
+		untyped __lua__(
+			"local max = -1
+			for key, value in pairs (self) do
+			max = key > max and key or max
+			end
+			local first = true
+			for i=0,max do
+			local value = self[i]
+			s = s + (first and value or (\", \" + value))
+			first = false
+			end");
+		return s + " ]";
+	}
+
+	public function unshift( x : T ) : Void
+	{
+		var len = length;
+		for (i in 0...len) this[len - i] = this[len - i - 1];
+		this[0] = x;
+	}
+
+	public inline function insert( pos : Int, x : T ) : Void
+	{
+		var len = length;
+		for (i in - 1...len - pos) this[len - i] = this[len - i - 1];
+		this[pos] = x;
+	}
+
+	public function remove( x : T ) : Bool
+	{
+		var result = indexOf(x);
+		if (result == -1)
+		{
+			return false;
+		}
+		else {
+			var len = length;
+			for (i in result...len - 1) this[i] = this[i + 1];
+			this[len] = cast null;
+			return true;
+		}
+	}
+
+	public function indexOf( x : T, ? fromIndex : Int ) : Int
+	{
+		if (fromIndex == null) fromIndex = 0;
+		for (i in fromIndex...length)
+			if (x == this[i]) return i;
+		return -1;
+	}
+
+	public function lastIndexOf( x : T, ? fromIndex : Int ) : Int
+	{
+		if (fromIndex == null) fromIndex = length;
+		for (i in 0...fromIndex)
+			if (x == this[fromIndex - i]) return fromIndex - i;
+		return -1;
+	}
+
+	public function copy() : Array<T>
+	{
+		var result = untyped __lua__("{}");
+		untyped __lua__(
+			"for k,v in pairs(self) do
+			result[k] = v
+			end");
+		return lua.Lib.setmetatable(result, Array);
+	}
+
+	public function map<S>(f: T->S): Array<S>
+	{
+		var result = untyped __lua__("{}");
+		untyped __lua__("for k,v in pairs(self) do result[k] = f(v) end");
+		return lua.Lib.setmetatable(result, Array);
+	}
+
+	public function filter(f: T->Bool): Array<T>
+	{
+		var result: Array<T> = [];
+		for (i in this)
+			if (f(i)) result.push(i);
+		return result;
+	}
+
+	@: runtime public inline function iterator() : Iterator<T>
+	{
+		var result: Dynamic = untyped __lua__("{}");
+		result.cur = 0;
+		result.arr = this;
+		result.hasNext = function(): Bool {
+			return result.arr[result.cur] != null;
+		}
+		result.next = function(): T {
+			result.cur++;
+			return cast result.arr[cast(result.cur - 1)];
+		}
+		return result;
+	}
 }

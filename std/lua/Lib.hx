@@ -19,27 +19,26 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+
 package lua;
 
 class Lib
 {
+	inline static public function eval(code: String): Dynamic
+	return (untyped __global__(dostring, code));
 
+	inline static public function setmetatable<T>(obj: T, mt: Class<Dynamic>): T
+	return (untyped __call__("setmetatable", obj, mt));
 
-	inline static public function setmetatable<T>(obj:T, mt:Class<Dynamic>):T
-	return (untyped __call__("setmetatable",obj,mt));
+	inline static public function setmetatabledef<T>(obj: T, mt: Metatable): T
+	return (untyped __call__("setmetatable", obj, mt));
 
-	inline static public function setmetatabledef<T>(obj:T, mt:Metatable):T
-	return (untyped __call__("setmetatable",obj,mt));
+	inline static public function getmetatable<T>(obj: T): Metatable
+	return (untyped __call__("getmetatable", obj));
 
-	inline static public function getmetatable<T>(obj:T):Metatable
-	return (untyped __call__("getmetatable",obj));
-	/**
-		Inserts a 'debugger' statement that will make a breakpoint if a debugger is available.
-	**/
-	public static inline function debug()
-	{
-		untyped __lua__("debugger");
-	}
+	/** Pack multiple returns of function into LuaArray **/
+	@: extern inline static public function _pack(arg: Dynamic): LuaArray<Dynamic>
+	return cast untyped pack(arg);
 
 	/**
 		Inserts '#' char before expression
@@ -53,11 +52,6 @@ class Lib
 	public static function alert( v : Dynamic )
 	{
 		untyped __lua__("alert")(lua.Boot.__string_rec(v, ""));
-	}
-
-	public static inline function eval( code : String ) : Dynamic
-	{
-		return untyped __lua__("eval")(code);
 	}
 
 	/**

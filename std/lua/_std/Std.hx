@@ -25,14 +25,27 @@ import lua.Boot;
 @: coreApi class Std
 {
 
-	public static inline function is( v : Dynamic, t : Dynamic ) : Bool
+	public static function is( v : Dynamic, t : Dynamic ) : Bool
 	{
-		return untyped lua.Boot.__instanceof(v, t);
+		// TODO: __ename__ Enums
+		// TODO basic types & funtions detection
+		return v != null && t != null && Std.instance( v, t ) != null;
 	}
 
-	public static inline function instance < T: {}, S: T > ( value : T, c : Class<S> ) : S
+	public static function instance < T: {}, S: T > ( value : T, c : Class<S> ) : S
 	{
-		return untyped __instanceof__(value, c) ? cast value : null;
+		untyped __lua__("if(value == nil)then return nil end
+		local mt = getmetatable(value)
+		if(mt == c)then return value end
+		while(mt ~= nil)do
+		mt = mt.__super__
+		if(mt == c and mt ~= Object)then return value end
+		end
+		if(type(value) == 'number' and c == Int)then return value end
+		if(type(value) == 'number' and c == Float)then return value end
+		if(type(value) == 'string' and c == String)then return value end
+		");
+		return null;
 	}
 
 	public static function string( s : Dynamic ) : String
@@ -47,18 +60,19 @@ import lua.Boot;
 
 	public static function parseInt( x : String ) : Null<Int>
 	{
-		var v = untyped __lua__("parseInt")(x, 10);
+		return untyped __global__(tonumber, x);
+		/*var v = untyped __lua__("parseInt")(x, 10);
 		// parse again if hexadecimal
 		if ( v == 0 && (x.charCodeAt(1) == 'x'.code || x.charCodeAt(1) == 'X'.code) )
 			v = untyped __lua__("parseInt")(x);
 		if ( untyped __lua__("isNaN")(v) )
 			return null;
-		return cast v;
+		return cast v;*/
 	}
 
 	public static inline function parseFloat( x : String ) : Float
 	{
-		return untyped __lua__("parseFloat")(x);
+		return untyped __global__(tonumber, x);
 	}
 
 	public static function random( x : Int ) : Int
@@ -68,7 +82,7 @@ import lua.Boot;
 
 	static function __init__() : Void untyped
 	{
-		__feature__("lua.Boot.getClass", String.prototype.__class__ = __feature__("Type.resolveClass", $hxClasses["String"] = String, String));
+		/*__feature__("lua.Boot.getClass", String.prototype.__class__ = __feature__("Type.resolveClass", $hxClasses["String"] = String, String));
 		__feature__("lua.Boot.isClass", String.__name__ = __feature__("Type.getClassName", ["String"], true));
 		__feature__("Type.resolveClass", $hxClasses["Array"] = Array);
 		__feature__("lua.Boot.isClass", Array.__name__ = __feature__("Type.getClassName", ["Array"], true));
@@ -98,12 +112,12 @@ import lua.Boot;
 		});
 		__feature__("Void.*", {
 			var Void = __feature__("Type.resolveEnum", $hxClasses["Void"] = { __ename__ : ["Void"] }, { __ename__ : ["Void"] });
-		});
+		});*/
 
-		__feature__("Array.map",
+		/*__feature__("Array.map",
 		if ( Array.prototype.map == null )
 		Array.prototype.map = function(f)
-	{
+		{
 		var a = [];
 			for ( i in 0...__this__.length )
 				a[i] = f(__this__[i]);
@@ -113,7 +127,7 @@ import lua.Boot;
 		__feature__("Array.filter",
 		if ( Array.prototype.filter == null )
 		Array.prototype.filter = function(f)
-	{
+		{
 		var a = [];
 			for ( i in 0...__this__.length )
 			{
@@ -122,6 +136,6 @@ import lua.Boot;
 			}
 			return a;
 		}
-				   );
+				   );*/
 	}
 }

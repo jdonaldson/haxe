@@ -61,18 +61,24 @@
 	public static function fields( o : Dynamic ) : Array<String>
 	{
 		var a = [];
-		if (o != null) untyped {
-			var hasOwnProperty = __lua__('Object').prototype.hasOwnProperty;
-			__lua__("--for( var f in o ) {");
-			if ( f != "__id__" && f != "hx__closures__" && hasOwnProperty.call(o, f) ) a.push(f);
-			__lua__("--}");
+		if (o != null)
+		{
+			//untyped
+			//{
+			//	var hasOwnProperty = __lua__('Object').prototype.hasOwnProperty;
+			//	//__lua__("--for( var f in o ) {");
+			//	if ( f != "__id__" && f != "hx__closures__" && hasOwnProperty.call(o, f) ) a.push(f);
+			//	//__lua__("--}");
+			//}
+
+			untyped __lua__("for key, value in pairs (o) do a:push(key); end");
 		}
 		return a;
 	}
 
-	public static function isFunction( f : Dynamic ) : Bool untyped
+	public static function isFunction( f : Dynamic ) : Bool
 	{
-		return __lua__("typeof(f)") == "function" && !(lua.Boot.isClass(f) || lua.Boot.isEnum(f));
+		return untyped __global__(type, f) == "function";
 	}
 
 	public static function compare<T>( a : T, b : T ) : Int
@@ -91,10 +97,9 @@
 
 	public static function isObject( v : Dynamic ) : Bool untyped
 	{
-		if ( v == null )
-			return false;
-		var t = __lua__("typeof(v)");
-		return (t == "string" || (t == "object" && v.__enum__ == null)) || (t == "function" && (lua.Boot.isClass(v) || lua.Boot.isEnum(v)) != null);
+		if ( v == null ) return false;
+		var t = __global__(type, v);
+		return (t == "string" || t == "userdata" || (t == "table" && v.__enum__ == null)) || (t == "function" && (lua.Boot.isClass(v) || lua.Boot.isEnum(v)) != null);
 	}
 
 	public static function isEnumValue( v : Dynamic ) : Bool

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -19,36 +19,37 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
+
 /**
 	This class gives you access to many base functionalities of system platforms. Looks in [sys] sub packages for more system APIs.
 **/
-package luaxe;
 
-/*
-	implementation inside sys.lua
-*/
-
-class Sys {
-
+@: coreApi class Sys
+{
 	/**
 		Print any value on the standard output.
 	**/
-	public	static function print( v : Dynamic ) : Void {};
+	public inline static function print( v : Dynamic ) : Void untyped __global__("print", v);
 
 	/**
 		Print any value on the standard output, followed by a newline
 	**/
-	public	static function println( v : Dynamic ) : Void {};
+	public inline static function println( v : Dynamic ) : Void
+	{
+		// TODO
+		untyped __global__(print, v);
+		untyped __global__(print, "\n");
+	}
 
 	/**
 		Returns all the arguments that were passed by the commandline.
 	**/
-	public	static function args() : Array<String> return null;
+	public	static function args() : Array<String> return untyped TODO || {};
 
 	/**
 		Returns the value of the given environment variable.
 	**/
-	public	static function getEnv( s : String ) : String return null;
+	public inline static function getEnv( s : String ) : String return lua.Os.getenv(s);
 
 	/**
 		Set the value of the given environment variable.
@@ -58,12 +59,17 @@ class Sys {
 	/**
 		Returns the whole environement variables.
 	**/
-	public	static function environment() : haxe.ds.StringMap<String> return null;
+	public static function environment() : Map<String, String>
+	return null;
 
 	/**
 		Suspend the current execution for the given time (in seconds).
 	**/
-	public	static function sleep( seconds : Float ) : Void {};
+	public	static function sleep( seconds : Float ) : Void
+	{
+		var t = lua.Os.clock();
+		while ((lua.Os.clock() - t) <= seconds) {}
+	};
 
 	/**
 		Change the current time locale, which will affect [DateTools.format] date formating.
@@ -92,12 +98,20 @@ class Sys {
 		The current process will block until the command terminates and it will return the command result (0 if there was no error).
 		Read the [sys.io.Process] api for a more complete way to start background processes.
 	**/
-	public	static function command( cmd : String, ?args : Array<String> ) : Int return 0;
+	public	static function command( cmd : String, ? args : Array<String> ) : Int
+	{
+		/* TODO --> optional args
+		local r = cmd
+		for i, v in ipairs(args) do r = r .. " " .. tostring(v) end
+		os.execute(r)
+		*/
+		return 0;
+	}
 
 	/**
 		Exit the current process with the given error code.
 	**/
-	public	static function exit( code : Int ) : Void {};
+	public inline static function exit( code : Int ) : Void lua.Os.exit(code);
 
 	/**
 		Gives the most precise timestamp value (in seconds).

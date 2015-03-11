@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -19,7 +19,6 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-package;
 
 // Can't enable @:coreApi because some fields are now inline getters
 // @:coreApi
@@ -131,6 +130,6 @@ class Math
 
 	public static function __init__() : Void
 	{
-		untyped __feature__("Type.resolveClass", $hxClasses["Math"] = Math);
+		untyped __feature__("Type.resolveClass", _G.hxClasses["Math"] = Math);
 	}
 }

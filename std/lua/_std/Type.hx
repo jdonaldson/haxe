@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2015 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -115,10 +115,9 @@ enum ValueType
 		return null;
 	}
 
-	public static function createEmptyInstance<T>( cl : Class<T> ) : T untyped
+	public static function createEmptyInstance<T>( cl : Class<T> ) : T
 	{
-		__lua__("--function empty() end; empty.prototype = cl.prototype");
-		return __lua__("empty.new()");
+		return untyped __lua__("(setmetatable({}, cl))");
 	}
 
 	public static function createEnum<T>( e : Enum<T>, constr : String,
@@ -173,7 +172,39 @@ enum ValueType
 
 	public static function typeof( v : Dynamic ) : ValueType untyped
 	{
-		switch ( __lua__("typeof")(v) )
+		if (v == null) return TNull;
+		var t: String = untyped type(v);
+
+		if (t == "string")
+		{
+			return TClass(String);
+		}
+		else if (t == "boolean") return TBool;
+		else if (t == "number")
+		{
+			try
+			{
+				var f = untyped math.modf;
+				var i = f(v);
+				if (i == v) return TInt;
+			}
+			catch (e: Dynamic) trace(e);
+			return TFloat;
+		}
+		else if (t == "function") return TFunction;
+		else if (t == "table")
+		{
+			var mt = lua.Lib.getmetatable(v);
+			if (mt == untyped Object) return TObject;
+			else
+				return TClass(cast mt);
+		}
+
+		// TODO TEnum( e : Enum<Dynamic> );
+
+		return TUnknown;
+
+		/*switch ( __lua__("typeof")(v) )
 		{
 		case "boolean": return TBool;
 		case "string": return TClass(String);
@@ -200,7 +231,7 @@ enum ValueType
 			return TNull;
 		default:
 			return TUnknown;
-		}
+		}*/
 	}
 
 	public static function enumEq<T>( a : T, b : T ) : Bool untyped

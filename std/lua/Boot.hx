@@ -46,7 +46,7 @@ class Boot
 			var d;
 			if ( __lua__("typeof")(document) != "undefined" && (d = document.getElementById("haxe:trace")) != null )
 				d.innerHTML += __unhtml(msg) + "<br/>";
-			else if ( __lua__("typeof console") != "undefined" && __lua__("console").log != null )
+			else if ( __lua__("typeof_console") != "undefined" && __lua__("console").log != null )
 				__lua__("console").log(msg);
 #end
 		}
@@ -100,13 +100,12 @@ class Boot
 				return "null";
 			if ( s.length >= 5 )
 				return "<...>"; // too much deep recursion
-			var t = __lua__("typeof(o)");
-			if ( t == "function" && (isClass(o) || isEnum(o)) )
-				t = "object";
+			var t = __lua__("type(o)");
+			if ( t == "function" && (isClass(o) || isEnum(o)) ) t = "object";
 			switch ( t )
 			{
 			case "object":
-				if ( __lua__("o instanceof Array") )
+				if ( __lua__("o_instanceof_Array") )
 				{
 					if ( o.__enum__ )
 					{
@@ -153,16 +152,15 @@ class Boot
 				var str = "{\n";
 				s += "\t";
 				var hasp = (o.hasOwnProperty != null);
-				__lua__("for( var k in o ) {");
-				if ( hasp && !o.hasOwnProperty(k) )
-					__lua__("continue");
-				if ( k == "prototype" || k == "__class__" || k == "__super__" || k == "__interfaces__"
+				__lua__("do--for( var k in o ) {");
+				// TODO if ( hasp && !o.hasOwnProperty(k) ) __lua__("continue");
+				/* TODO if ( k == "prototype" || k == "__class__" || k == "__super__" || k == "__interfaces__"
 						|| k == "__properties__" )
 					__lua__("continue");
 				if ( str.length != 2 )
 					str += ", \n";
-				str += s + k + " : " + __string_rec(o[k], s);
-				__lua__("}");
+				str += s + k + " : " + __string_rec(o[k], s);*/
+				__lua__("end--}");
 				s = s.substring(1);
 				str += "\n" + s + "}";
 				return str;
@@ -171,7 +169,7 @@ class Boot
 			case "string":
 				return o;
 			default:
-				return String(o);
+				return o;//(("") + (o));
 			}
 		}
 	}
@@ -196,9 +194,10 @@ class Boot
 	@: ifFeature("typed_catch") private static function __instanceof(o : Dynamic,
 			cl : Dynamic)
 	{
-		if ( cl == null )
-			return false;
-		switch ( cl )
+		return Std.is(o, cl);
+		//if ( cl == null )
+		//return false;
+		/*switch ( cl )
 		{
 		case Int:
 			return (untyped __lua__("(o|0) === o"));
@@ -237,7 +236,7 @@ class Boot
 			untyped __feature__("Class.*", if ( cl == Class && o.__name__ != null ) return true);
 			untyped __feature__("Enum.*", if ( cl == Enum && o.__ename__ != null ) return true);
 			return o.__enum__ == cl;
-		}
+		}*/
 	}
 
 	@: ifFeature("typed_cast") private static function __cast(o : Dynamic, t : Dynamic)
@@ -246,7 +245,7 @@ class Boot
 		else throw "Cannot cast " + Std.string(o) + " to " + Std.string(t);
 	}
 
-	static var __toStr = untyped __lua__("{}.toString");
+	static var __toStr = untyped __lua__("tostring");
 	// get native lua [[Class]]
 	static function __nativeClassName(o: Dynamic): String
 	{
@@ -267,10 +266,11 @@ class Boot
 	// resolve native lua class (with window or global):
 	static function __resolveNativeClass(name: String) untyped
 	{
-		if (__lua__("typeof window") != "undefined")
-			return window[name];
-		else
-			return global[name];
+		return untyped _G;
+		//if (__lua__("typeof window") != "undefined")
+		//	return window[name];
+		//else
+		//	return global[name];
 	}
 
 }

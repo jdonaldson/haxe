@@ -290,6 +290,13 @@ let rec gen_call ctx e el in_value =
 		concat ctx "," (gen_value ctx) el;
 		spr ctx ")";
 
+	| TField ({eexpr = TConst _} as e, ((FInstance _ | FAnon _) as ef)), el ->
+		spr ctx "(";
+		gen_value ctx e;
+		print ctx "):%s(" (field_name ef);
+		concat ctx "," (gen_value ctx) el;
+		spr ctx ")";
+
 	| TField (e, ((FInstance _ | FAnon _) as ef)), el ->
 		gen_value ctx e;
 		print ctx ":%s(" (field_name ef);
@@ -329,7 +336,10 @@ let rec gen_call ctx e el in_value =
 		spr ctx "}";
 	| TLocal { v_name = "__global__" }, cl :: params -> (* TODO doc *)
 		spr ctx "_G.";
-		gen_value ctx cl;
+		(match cl.eexpr with
+			| TConst (TString s) -> spr ctx s
+			| _ -> gen_value ctx cl
+		);
 		spr ctx "(";
 		concat ctx "," (gen_value ctx) params;
 		spr ctx ")";
@@ -445,6 +455,9 @@ and gen_expr ctx e =
 	| TBinop (op,e1,e2) ->
 		gen_value ctx e1;
 		let o = (match op with
+		| OpAssignOp((OpXor|OpAnd|OpShl|OpShr|OpUShr|OpOr) as aop) ->
+			spr ctx " = ";
+			aop
 		| OpAssignOp(aop) ->
 			spr ctx " = ";
 			gen_value ctx e1;
@@ -475,7 +488,7 @@ and gen_expr ctx e =
 		add_feature ctx "use.Qbind";
 		(match x.eexpr with
 		| TConst _ | TLocal _ ->
-			print ctx "Qbind(";
+			print ctx "_G.bind(";
 			gen_value ctx x;
 			print ctx ",";
 			gen_value ctx x;
@@ -483,7 +496,7 @@ and gen_expr ctx e =
 		| _ ->
 			print ctx "(Q_=";
 			gen_value ctx x;
-			print ctx ",Qbind(Q_,Q_%s))" (field f.cf_name))
+			print ctx ",_G.bind(Q_,Q_%s))" (field f.cf_name))
 	| TEnumParameter (x,_,i) ->
 		gen_value ctx x;
 		print ctx "[%i]" (i + 2)
@@ -662,7 +675,7 @@ and gen_expr ctx e =
 		spr ctx "repeat ::continue::";
 		gen_expr ctx e;
 		semicolon ctx;
-		spr ctx " until";
+		spr ctx " until not";
 		gen_value ctx cond;
 		handle_break();
 	| TObjectDecl fields ->
@@ -790,8 +803,8 @@ and gen_expr ctx e =
 			newline ctx;
 		);
 		spr ctx "end"
-	| TCast (e,None) ->
-		gen_expr ctx e
+	| TCast (e,_) -> gen_expr ctx e
+	| TCast (e,None) -> gen_expr ctx e
 	| TCast (e1,Some t) ->
 		print ctx "%s.__cast(" (ctx.type_accessor (TClassDecl { null_class with cl_path = ["lua"],"Boot" }));
 		gen_expr ctx e1;
@@ -830,6 +843,7 @@ and gen_block_element ?(after=false) ctx e =
 		gen_block_element ~after ctx (mk (TParenthesis e) e.etype e.epos)
 	| TObjectDecl fl ->
 		List.iter (fun (_,e) -> gen_block_element ~after ctx e) fl
+	| TCast (e,_) -> gen_block_element ctx e
 	| _ ->
 		if not after then newline ctx;
 		gen_expr ctx e;
@@ -848,7 +862,7 @@ and gen_value ctx e =
 		let r = alloc_var "_r" t_dynamic in
 		ctx.in_value <- Some r;
 		ctx.in_loop <- false;
-		spr ctx "(function(_this) ";
+		spr ctx "(function(this) ";
 		let b = open_block ctx in
 		newline ctx;
 		spr ctx "local _r";
@@ -1242,7 +1256,7 @@ let generate_class ctx c =
 			| Some (csup,_) when Codegen.has_properties csup ->
 				newline ctx;
 				let psup = s_path ctx csup.cl_path in
-				print ctx "%s.__properties__ = Qextend(%s.prototype.__properties__,{%s})" p psup (gen_props props)
+				print ctx "--%s.__properties__ = Qextend(%s.prototype.__properties__,{%s})" p psup (gen_props props)
 			| _ ->
 				newline ctx;
 				print ctx "%s.__properties__ = {%s}" p (gen_props props));
@@ -1342,7 +1356,6 @@ let generate_type ctx = function
 			ctx.inits <- e :: ctx.inits);
 		(* Special case, want to add Math.__name__ only when required, handle here since Math is extern *)
 		let p = s_path ctx c.cl_path in
-		if p = "Math" then generate_class___name__ ctx c;
 		(* Another special case for Std because we do not want to generate it if it's empty. *)
 		if p = "Std" && c.cl_ordered_statics = [] then
 			()
@@ -1420,6 +1433,9 @@ let generate com =
 	_.__index = function(str, p) if (p == 'length') then return string.len(str) else return String[p] end end
 
 	_ = nil;
+	_G.hxClasses = _G.hxClasses or {}
+	function _G.bind(o,m) if(not m)then return nil end; return function(...)
+	local result = m(o, ...); return result; end end;
 
 	";
 
