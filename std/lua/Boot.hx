@@ -78,7 +78,10 @@ class Boot
 
 	static function getClass(o: Dynamic) : Dynamic
 	{
-		if (Std.is(o, Array))
+		var x = untyped __define_feature__("lua.Boot.getClass", null);
+		var cl = lua.Lib.getmetatable(o);
+		return cl;
+		/*if (Std.is(o, Array))
 			return Array;
 		else {
 			var cl = untyped __define_feature__("lua.Boot.getClass", o.__class__);
@@ -88,7 +91,7 @@ class Boot
 			if (name != null)
 				return __resolveNativeClass(name);
 			return null;
-		}
+		}*/
 	}
 
 	@: ifFeature("may_print_enum")
@@ -241,8 +244,9 @@ class Boot
 
 	@: ifFeature("typed_cast") private static function __cast(o : Dynamic, t : Dynamic)
 	{
-		if (__instanceof(o, t)) return o;
-		else throw "Cannot cast " + Std.string(o) + " to " + Std.string(t);
+		return o;
+		//if (__instanceof(o, t)) return o;
+		//else throw "Cannot cast " + Std.string(o) + " to " + Std.string(t);
 	}
 
 	static var __toStr = untyped __lua__("tostring");
