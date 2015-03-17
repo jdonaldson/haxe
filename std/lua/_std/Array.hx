@@ -78,7 +78,7 @@ class Array<T> implements ArrayAccess<T>
 		var result = this[0];
 		var len = length;
 		for (i in 0...len) this[i] = this[i + 1];
-		this[len - 2] = cast null;
+		this[len - 1] = cast null;
 		return result;
 	}
 
@@ -115,7 +115,7 @@ class Array<T> implements ArrayAccess<T>
 
 	public function splice( pos : Int, len : Int ) : Array<T>
 	{
-		var result = untyped __lua__("{}");
+		/*var result = untyped __lua__("{}");
 		untyped __lua__(
 			"for i = pos,len do
 			result[i] = self[i]
@@ -123,15 +123,83 @@ class Array<T> implements ArrayAccess<T>
 			for i = pos,len-pos do
 			self[i] = self[i+pos+1]
 			end
-			for i = len,#self do
+			for i = len,self.length do
 			self[i] = nil
 			end");
-		return lua.Lib.setmetatable(result, Array);
+		return lua.Lib.setmetatable(result, Array);*/
+		var array = this;
+		var result = [];
+		var removed = [];
+		//var argsLen = arguments.length;
+		var arrLen = array.length;
+		var i : Int;
+
+		// Follow spec more or less
+		var start = pos;
+		var deleteCount = len;
+
+		// Deal with negative start per spec
+		// Don't assume support for Math.min/max
+		if (start < 0)
+		{
+			start = arrLen + start;
+			start = (start > 0) ? start : 0;
+		}
+		else {
+			start = (start < arrLen) ? start : arrLen;
+		}
+
+		// Deal with deleteCount per spec
+		if (deleteCount < 0) deleteCount = 0;
+
+		if (deleteCount > (arrLen - start))
+		{
+			deleteCount = arrLen - start;
+		}
+
+		// Copy members up to start
+		for (i in 0...start)
+		{
+			result[i] = array[i];
+		}
+
+		// Add new elements supplied as args
+		//for (i = 3...argsLen)
+		//{
+		//	result.push(arguments[i]);
+		//}
+
+		// Copy removed items to removed array
+		for (i in start...start + deleteCount)
+		{
+			removed.push(array[i]);
+		}
+
+		// Add those after start + deleteCount
+		for (i in start + (deleteCount)...arrLen)
+		{
+			result.push(array[i]);
+		}
+
+		// Update original array
+
+		while (array.length > 0) array.pop();
+		//array.length = 0;
+
+		i = result.length;
+		while (i-- > 0)
+		{
+			array[i] = result[i];
+		}
+
+		// Return array of removed elements
+		return removed;
 	}
 
 	public function toString() : String
 	{
-		var s = "[ ";
+		if (length == 0) return "[]";
+		var s = "[";
 		untyped __lua__(
 			"local max = -1
 			for key, value in pairs (self) do
@@ -140,10 +208,10 @@ class Array<T> implements ArrayAccess<T>
 			local first = true
 			for i=0,max do
 			local value = self[i]
-			s = s + (first and value or (\", \" + value))
+			s = s + (first and value or (\",\" + value))
 			first = false
 			end");
-		return s + " ]";
+		return s + "]";
 	}
 
 	public function unshift( x : T ) : Void
@@ -162,7 +230,11 @@ class Array<T> implements ArrayAccess<T>
 
 	public function remove( x : T ) : Bool
 	{
-		var result = indexOf(x);
+		var i = indexOf(x);
+		if ( i == -1 ) return false;
+		splice(i, 1);
+		return true;
+		/*var result = indexOf(x);
 		if (result == -1)
 		{
 			return false;
@@ -172,14 +244,27 @@ class Array<T> implements ArrayAccess<T>
 			for (i in result...len - 1) this[i] = this[i + 1];
 			this[len] = cast null;
 			return true;
-		}
+		}*/
 	}
 
 	public function indexOf( x : T, ? fromIndex : Int ) : Int
 	{
-		if (fromIndex == null) fromIndex = 0;
+		/*if (fromIndex == null) fromIndex = 0;
 		for (i in fromIndex...length)
 			if (x == this[i]) return i;
+		return -1;*/
+		var i = untyped fromIndex || 0;
+		var len = length;
+		if (i < 0)
+		{
+			i += len;
+			if (i < 0) i = 0;
+		}
+		while (i < len)
+		{
+			if (this[i] == x) return i;
+			i++;
+		}
 		return -1;
 	}
 
@@ -222,7 +307,8 @@ class Array<T> implements ArrayAccess<T>
 		result.cur = 0;
 		result.arr = this;
 		result.hasNext = function(): Bool {
-			return result.arr[result.cur] != null;
+			return result.cur < result.arr.length;
+			//return result.arr[result.cur] != null;
 		}
 		result.next = function(): T {
 			result.cur++;
