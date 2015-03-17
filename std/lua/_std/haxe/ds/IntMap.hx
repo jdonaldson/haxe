@@ -22,4 +22,4 @@
 
 package haxe.ds;
 
-typedef IntMap<T> = Map<Int, T>;
+class IntMap<T> extends lua.LuaMap<Int, T> {}

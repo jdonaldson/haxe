@@ -22,4 +22,4 @@
 
 package haxe.ds;
 
-typedef ObjectMap < K: { }, V > = Map<K, V>;
+class ObjectMap < K: { }, V > extends lua.LuaMap<K, V> {}

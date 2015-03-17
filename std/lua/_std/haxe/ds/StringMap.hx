@@ -22,4 +22,4 @@
 
 package haxe.ds;
 
-typedef StringMap<V> = Map<String, V>;
+class StringMap<V> extends lua.LuaMap<String, V> {}
