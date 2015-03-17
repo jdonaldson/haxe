@@ -29,6 +29,7 @@ import lua.Boot;
 	{
 		// TODO: __ename__ Enums
 		// TODO basic types & funtions detection
+		if (lua.Lib.getmetatable(v) == t) return true;
 		return v != null && t != null && Std.instance( v, t ) != null;
 	}
 
@@ -48,14 +49,13 @@ import lua.Boot;
 		return null;
 	}
 
-	public static function string( s : Dynamic ) : String
-	{
-		return untyped lua.Boot.__string_rec(s, "");
-	}
+	// redeclared in genlua
+	public static function string( s : Dynamic ) : String return "#null";
 
 	public static inline function int( x : Float ) : Int
 	{
-		return (cast x) | 0;
+		return x > 0 ? lua.LuaMath.floor(x) : lua.LuaMath.ceil(x);
+		//(cast x) | 0;
 	}
 
 	public static function parseInt( x : String ) : Null<Int>
@@ -78,6 +78,7 @@ import lua.Boot;
 	public static function random( x : Int ) : Int
 	{
 		return untyped x <= 0 ? 0 : Math.floor(Math.random() * x);
+		// math.random(0,x-1)
 	}
 
 	static function __init__() : Void untyped
