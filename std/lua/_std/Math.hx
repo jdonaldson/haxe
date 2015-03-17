@@ -28,19 +28,19 @@ class Math
 	public static var PI(default, null) : Float = untyped math.pi;
 
 	public static var NEGATIVE_INFINITY(get, null) : Float;
-	private static inline function get_NEGATIVE_INFINITY () : Float
+	private static function get_NEGATIVE_INFINITY () : Float
 	{
 		return untyped __lua__("(-1.0 / 0.0)");
 	}
 
 	public static var POSITIVE_INFINITY(get, null) : Float;
-	private static inline function get_POSITIVE_INFINITY () : Float
+	private static function get_POSITIVE_INFINITY () : Float
 	{
 		return untyped __lua__("(1.0 / 0.0)");
 	}
 
 	public static var NaN(get, null) : Float;
-	private static inline function get_NaN () : Float
+	private static function get_NaN () : Float
 	{
 		return untyped __lua__("(0 / 0)");
 	}
@@ -123,9 +123,9 @@ class Math
 		return return f != NEGATIVE_INFINITY && f != POSITIVE_INFINITY && f != NaN;
 	}
 
-	public static inline function isNaN( f : Float ) : Bool
+	public static function isNaN( f : Float ) : Bool
 	{
-		return f == NaN;
+		return untyped __lua__("_G.tostring(f) == 'nan' or _G.tostring(f) == '-nan'");
 	}
 
 	public static function __init__() : Void
