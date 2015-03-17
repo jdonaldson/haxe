@@ -64,18 +64,6 @@ class HxOverrides
 		}
 	}
 
-	/*static function cca( s : String, index : Int ) : Null<Int>
-	{
-#if mt
-		var x = (cast s).cca(index);
-#else
-		var x = (cast s).charCodeAt(index);
-#end
-		if ( x != x ) // fast isNaN
-			return untyped undefined; // isNaN will still return true
-		return x;
-	}*/
-
 	static function substr( s : String, pos : Int, ? len : Int ) : String
 	{
 		if ( pos != null && pos != 0 && len != null && len < 0 ) return "";
@@ -103,7 +91,7 @@ class HxOverrides
 		}
 		while (i < len)
 		{
-			if (untyped __js__("a[i] == obj"))
+			if (untyped __lua__("a[i] == obj"))
 				return i;
 			i++;
 		}
@@ -119,7 +107,7 @@ class HxOverrides
 			i += len;
 		while (i >= 0)
 		{
-			if (untyped __js__("a[i] == obj"))
+			if (untyped __lua__("a[i] == obj"))
 				return i;
 			i--;
 		}
@@ -136,18 +124,17 @@ class HxOverrides
 
 	static function iter<T>( a : Array<T> ) : Iterator<T> untyped
 	{
-		return {
-			cur : 0,
-			arr : a,
-			hasNext : function()
-			{
-				return __this__.cur < __this__.arr.length;
-			},
-			next : function()
-			{
-				return __this__.arr[__this__.cur++];
-			}
-		};
+		var result: Dynamic = untyped __lua__("{}");
+		result.cur = 0;
+		result.arr = a;
+		result.hasNext = function(): Bool {
+			return result.cur < result.arr.length;
+		}
+		result.next = function(): T {
+			result.cur++;
+			return cast result.arr[cast(result.cur - 1)];
+		}
+		return result;
 	}
 
 	static function __init__() untyped
