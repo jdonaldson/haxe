@@ -106,6 +106,7 @@ class Log {
 			}
 			python.Lib.println(str);
 		#elseif (lua)
+			v = Std.string(v);
 			untyped __lua__('
 			local i = infos
 			if(i and i.fileName and i.customParams)then
