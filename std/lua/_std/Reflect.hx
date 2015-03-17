@@ -24,12 +24,18 @@
 
 	public inline static function hasField( o : Dynamic, field : String ) : Bool
 	{
-		return untyped __lua__('Object').prototype.hasOwnProperty.call(o, field);
+		if ((o == null) || (field == null)) return false;
+		return untyped o[field] != null;
+		// untyped __lua__('Object').prototype.hasOwnProperty.call(o, field);
 	}
 
 	public static function field( o : Dynamic, field : String ) : Dynamic
 	{
-		try return untyped o[field] catch ( e : Dynamic ) return null;
+		//try return untyped o[field] catch ( e : Dynamic ) return null;
+		//if (untyped o[field] == null) trace("wrong field: " + field);
+		//return untyped o && (pcall(function()return o[field])) || nil;
+		untyped __lua__("local ok, result = pcall(function()return o[field]end)");
+		return untyped ok && result || nil;
 	}
 
 	public inline static function setField( o : Dynamic, field : String,
@@ -48,14 +54,30 @@
 	public static inline function setProperty( o : Dynamic, field : String,
 			value : Dynamic ) : Void untyped
 	{
+		/* TODO
+		if o then
+		local t = "set_" .. f
+		if o[t] then o[t](o, v)
+		else Reflect.setField(o, f, v) end
+		end
+		*/
 		var tmp;
-		if ( o.__properties__ && (tmp = o.__properties__["set_" + field]) ) o[tmp](value) else o[field] = __define_feature__("Reflect.setProperty", value);
+		if ( o.__properties__ && (tmp = o.__properties__["set_" + field]) )
+			o[tmp](value)
+			else
+				o[field] = __define_feature__("Reflect.setProperty", value);
 	}
 
-	public inline static function callMethod( o : Dynamic, func : haxe.Constraints.Function,
-			args : Array<Dynamic> ) : Dynamic untyped
+	public static function callMethod( o : Dynamic, func : haxe.Constraints.Function, args : Array<Dynamic> ) : Dynamic untyped
 	{
-		return func.apply(o, args);
+		/* TODO
+		if o and func and args and o[func] then
+		local a = args:copy()
+		table.insert(a, 0, o)
+		return o[func](o, unpack(a))
+		end	return nil
+		*/
+		return func(o, unpack(args));
 	}
 
 	public static function fields( o : Dynamic ) : Array<String>
@@ -70,7 +92,7 @@
 			//	if ( f != "__id__" && f != "hx__closures__" && hasOwnProperty.call(o, f) ) a.push(f);
 			//	//__lua__("--}");
 			//}
-
+			if (Std.is(o, String)) return a;
 			untyped __lua__("for key, value in pairs (o) do a:push(key); end");
 		}
 		return a;
@@ -83,16 +105,28 @@
 
 	public static function compare<T>( a : T, b : T ) : Int
 	{
-		return ( a == b ) ? 0 : (((cast a) > (cast b)) ? 1 : -1);
+		// If a and b are null, the result is 0.
+		if (a == null && b == null) return 0;
+		// If only one of them is null, the result is unspecified.
+		if (a == null || b == null) return null;
+		// This function is only defined if a and b are of the same type.
+		untyped __lua__("if type(a) ~= type(b) then return nil end");
+		// Numeric types: a is less than b
+		untyped __lua__("if type(a) == 'number' then
+		if a == b then return 0 else return (a < b) and -1 or 1 end end");
+		// String: a is lexicographically less than b
+		untyped __lua__("if type(a) == 'string' then
+		if a == b then return 0 else return (a < b) and -1 or 1 end end");
+		// For all other types, the result is 0 if a and b are equal.
+		return (a == b) ? 0 : null;
 	}
 
 	public static function compareMethods( f1 : Dynamic, f2 : Dynamic ) : Bool
 	{
-		if ( f1 == f2 )
-			return true;
-		if ( !isFunction(f1) || !isFunction(f2) )
-			return false;
-		return f1.scope == f2.scope && f1.method == f2.method && f1.method != null;
+		// If f1 or f2 are not functions, the result is unspecified.
+		if ( !isFunction(f1) || !isFunction(f2) ) return false;
+		// Otherwise the result is true if f1 and the f2 are physically equal, false otherwise.
+		return ( f1 == f2 );
 	}
 
 	public static function isObject( v : Dynamic ) : Bool untyped
@@ -107,10 +141,10 @@
 		return v != null && v.__enum__ != null;
 	}
 
-	public static function deleteField( o : Dynamic, field : String ) : Bool untyped
+	public static function deleteField( o : Dynamic, field : String ) : Bool
 	{
 		if ( !hasField(o, field) ) return false;
-		__lua__("delete")(o[field]);
+		untyped o[field] = null;
 		return true;
 	}
 
@@ -125,11 +159,12 @@
 	@: overload(function( f : Array<Dynamic> -> Void ) : Dynamic {})
 	public static function makeVarArgs( f : Array<Dynamic> -> Dynamic ) : Dynamic
 	{
-		return function()
-		{
-			var a = untyped Array.prototype.slice.call(__lua__("arguments"));
-			return f(a);
-		};
+		return untyped __lua__("function(...)
+		local a = (pack or table.pack)(...)
+		local b = {}
+		for k, v in ipairs(a) do b[k-1] = v end
+		setmetatable(b, Array)
+		return f(b)
+		end");
 	}
-
 }
