@@ -28,7 +28,7 @@
 		var now = Date.now();
 		if (year == null) untyped __lua__("return now");
 		untyped __lua__("self.d =
-		{year = year, day = day, month = month, hour = hour, min = min, sec = sec}
+		{year = year, day = day, month = month + 1, hour = hour, min = min, sec = sec}
 		self.buf = os.time(self.d)");
 	};
 
@@ -37,7 +37,7 @@
 	public function getMinutes() : Int return untyped self.d.min;
 	public function getSeconds() : Int return untyped self.d.sec;
 	public function getFullYear() : Int return untyped self.d.year;
-	public function getMonth() : Int return untyped self.d.month;
+	public function getMonth() : Int return untyped self.d.month - 1;
 	public function getDate() : Int return untyped self.d.day;
 	public function getDay() : Int return untyped os.date("%w", getTime());
 
