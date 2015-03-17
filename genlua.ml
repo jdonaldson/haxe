@@ -92,7 +92,7 @@ let kwds2 =
 	h
 
 let valid_lua_ident s =
-	try
+	String.length s > 0 && try
 		for i = 0 to String.length s - 1 do
 			match String.unsafe_get s i with
 			| 'a'..'z' | 'A'..'Z' | '$' | '_' -> ()
@@ -143,12 +143,6 @@ let pr ctx =
 	end)
 
 let unsupported p = error "This expression cannot be compiled to Lua" p
-
-let basename path =
-	try
-		let idx = String.rindex path '/' in
-		String.sub path (idx + 1) (String.length path - idx - 1)
-	with Not_found -> path
 
 (* new line without ; *)
 let line ctx =
