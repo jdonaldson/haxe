@@ -42,41 +42,128 @@
 
 	public function lastIndexOf( str : String, ? startIndex : Int ) : Int
 	{
-		var i = startIndex;
-		var r = 0;
-		while (i != null)
-		{
-			i = indexOf(str, i);
-			if (i != null) r = i;
-		}
-		return r - 1;
+		//return 0;
+		//var i = startIndex;
+		//var r = 0;
+		//while (i != -1)
+		//{
+		//	i = indexOf(str, i);
+		//	if (i != -1) r = i;
+		//}
+		//return r - 1;
+
+		untyped	__lua__("
+		local i, j
+		local k = 0
+		repeat
+		i = j
+		j, k = string.find(self, str, k + 1, true)
+		until j == nil");
+
+		return untyped __lua__("(i or 0) - 1");
+
+		//var i = untyped startIndex || 0;
+		//var ret = 0;
+		//while (i != -1)
+		//{
+		//	i = indexOf(str, i);
+		//	if (i != -1) ret = i;
+		//	if (i >= length) break ;
+		//}
+		//return ret - 1;
+
+		//var i = 0;//untyped startIndex || 0;
+		//var ret = 0;
+		//while (i > -1)
+		//{
+		//	i = indexOf(str, i);
+		//	if (i != -1) ret = i;
+		//}
+		//return ret - 1;
 	};
 
 	public function split( delimiter : String ) : Array<String>
 	{
-		var t : Dynamic = untyped __lua__("{}"), ll : Int = 0;
-		if (length == 1) return [this];
-		while (true)
+
+		if (length <= 1) return [this];
+		if (delimiter.length == 0)
 		{
-			var l = lua.LuaString.find(this, delimiter, ll, true);
-			if (l != null)
-			{
-				lua.Table.insert(t, lua.LuaString.sub(this, ll, l - 1));
-				ll = l + 1;
-			}
-			else
-			{
-				lua.Table.insert(t, lua.LuaString.sub(this, ll));
-				break ;
-			}
+			var r = [];
+			for (i in 0...length) r.push(lua.LuaString.sub(this, i + 1, i + 1));
+			return r;
 		}
-		return lua.Lib.setmetatable(t, Array);
+
+		untyped __lua__("local t, ll, d, p
+		p = self
+		t=setmetatable({}, Array)
+		ll=0
+		d=delimiter
+		while true do
+		l=string.find(p,d,ll,true)
+		if l~=nil then
+		t:push(string.sub(p,ll,l-1))
+		ll=l+1
+		else
+		t:push(string.sub(p,ll))
+		break
+		end
+		end");
+		return untyped t;
+
+		//return [];
+		//var t : Dynamic = untyped __lua__("{}"), ll : Int = 0;
+		//if (length == 1) return [this];
+		//while (ll < length)
+		//{
+		//	var l = lua.LuaString.find(this, delimiter, ll, true);
+		//	if (l != null)
+		//	{
+		//		lua.Table.insert(t, lua.LuaString.sub(this, ll, l - 1));
+		//		ll = l + 1;
+		//	}
+		//	else
+		//	{
+		//		lua.Table.insert(t, lua.LuaString.sub(this, ll));
+		//		break ;
+		//	}
+		//}
+		//return lua.Lib.setmetatable(t, Array);
 	};
 
 	public function substr( pos : Int, ? len : Int ) : String
-	return untyped len
+	{
+		if ( len == 0 ) return "";
+		var sl = length;
+
+		if ( len == null ) len = sl;
+
+		if ( pos == null ) pos = 0;
+		if ( pos != 0 && len < 0 )
+		{
+			return "";
+		}
+
+		if ( pos < 0 )
+		{
+			pos = sl + pos;
+			if ( pos < 0 ) pos = 0;
+		}
+		else if ( len < 0 )
+		{
+			len = sl + len - pos;
+		}
+
+		if ( pos + len > sl )
+		{
+			len = sl - pos;
+		}
+
+		if ( pos < 0 || len <= 0 ) return "";
+		return (untyped lua.LuaString.sub(this, pos + 1, pos + len));
+	}
+	/*return untyped len
 		   && lua.LuaString.sub(this, pos + 1, pos + len)
-		   || lua.LuaString.sub(this, pos + 1);
+		   || lua.LuaString.sub(this, pos + 1);*/
 
 	public inline static function fromCharCode( code : Int ) : String
 	return lua.LuaString.char(code);
