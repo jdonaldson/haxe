@@ -823,7 +823,7 @@ and gen_expr ctx e =
 
 and gen_block_element ?(after=false) ctx e =
 	match e.eexpr with
-	| TConst _ | TLocal _ | TField _ -> ()
+	| TConst _ | TLocal _ | TField _ | TTypeExpr _ -> ()
 	| TUnop ((Increment|Decrement),_,_) -> newline ctx; gen_expr ctx e
 	| TUnop (_,_,ue) -> gen_block_element ctx ue
 	| TParenthesis pe -> gen_block_element ctx pe
@@ -855,6 +855,7 @@ and gen_block_element ?(after=false) ctx e =
 	| TObjectDecl fl ->
 		List.iter (fun (_,e) -> gen_block_element ~after ctx e) fl
 	| TCast (ce,_) -> gen_block_element ctx ce
+	| TTry ({ eexpr = TBlock [] },_) -> ()
 	| _ ->
 		if not after then newline ctx;
 		gen_expr ctx e;
