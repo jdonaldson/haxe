@@ -19,100 +19,124 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  */
-@:coreApi class EReg {
 
-	var r : HaxeRegExp;
+@: coreApi class EReg
+{
+	//var r : HaxeRegExp;
 
-	public function new( r : String, opt : String ) : Void {
-		opt = opt.split("u").join(""); // 'u' (utf8) depends on page encoding
-		this.r = new HaxeRegExp(r, opt);
+	public function new( r : String, opt : String ) : Void
+	{
+		/*opt = opt.split("u").join(""); // 'u' (utf8) depends on page encoding
+		this.r = new HaxeRegExp(r, opt);*/
 	}
 
-	public function match( s : String ) : Bool {
-		if( r.global ) r.lastIndex = 0;
+	public function match( s : String ) : Bool
+	{
+		/*if ( r.global ) r.lastIndex = 0;
 		r.m = r.exec(s);
 		r.s = s;
-		return (r.m != null);
+		return (r.m != null);*/
+		return false;
 	}
 
-	public function matched( n : Int ) : String {
-		return if( r.m != null && n >= 0 && n < r.m.length ) r.m[n] else throw "EReg::matched";
+	public function matched( n : Int ) : String
+	{
+		return "matched";
+		//return if ( r.m != null && n >= 0 && n < r.m.length ) r.m[n] else throw "EReg::matched";
 	}
 
-	public function matchedLeft() : String {
-		if( r.m == null ) throw "No string matched";
-		return r.s.substr(0,r.m.index);
+	public function matchedLeft() : String
+	{
+		//if ( r.m == null ) throw "No string matched";
+		//return r.s.substr(0, r.m.index);
+		return "matchedLeft";
 	}
 
-	public function matchedRight() : String {
-		if( r.m == null ) throw "No string matched";
-		var sz = r.m.index+r.m[0].length;
-		return r.s.substr(sz,r.s.length-sz);
+	public function matchedRight() : String
+	{
+		//if ( r.m == null ) throw "No string matched";
+		//var sz = r.m.index + r.m[0].length;
+		//return r.s.substr(sz, r.s.length - sz);
+		return "matchedRight";
 	}
 
-	public function matchedPos() : { pos : Int, len : Int } {
-		if( r.m == null ) throw "No string matched";
-		return { pos : r.m.index, len : r.m[0].length };
+	public function matchedPos() :
+	{
+		pos : Int, len : Int
+	}
+	{
+		//if ( r.m == null ) throw "No string matched";
+		//return { pos : r.m.index, len : r.m[0].length };
+		return { pos : 0, len : 0 };
 	}
 
-	public function matchSub( s : String, pos : Int, len : Int = -1):Bool {
-		return if (r.global) {
+	public function matchSub( s : String, pos : Int, len : Int = -1): Bool
+	{
+		return false;
+		/*return if (r.global)
+		{
 			r.lastIndex = pos;
 			r.m = r.exec(len < 0 ? s : s.substr(0, pos + len));
 			var b = r.m != null;
-			if (b) {
+			if (b)
+			{
 				r.s = s;
 			}
 			b;
-		} else {
+		}
+		else {
 			// TODO: check some ^/$ related corner cases
-			var b = match( len < 0 ? s.substr(pos) : s.substr(pos,len) );
-			if (b) {
+			var b = match( len < 0 ? s.substr(pos) : s.substr(pos, len) );
+			if (b)
+			{
 				r.s = s;
 				r.m.index += pos;
 			}
 			b;
-		}
+		}*/
 	}
 
-	public function split( s : String ) : Array<String> {
+	public function split( s : String ) : Array<String>
+	{
 		// we can't use directly s.split because it's ignoring the 'g' flag
-		var d = "#__delim__#";
-		return untyped s.replace(r,d).split(d);
+		//var d = "#__delim__#";
+		//return untyped s.replace(r, d).split(d);
+		return [];
 	}
 
-	public function replace( s : String, by : String ) : String {
-		return untyped s.replace(r,by);
+	public function replace( s : String, by : String ) : String
+	{
+		//return untyped s.replace(r, by);
+		return s;
 	}
 
-	public function map( s : String, f : EReg -> String ) : String {
-		var offset = 0;
+	public function map( s : String, f : EReg -> String ) : String
+	{
+		return s;
+		/*var offset = 0;
 		var buf = new StringBuf();
 		do {
 			if (offset >= s.length)
 				break;
-			else if (!matchSub(s, offset)) {
+			else if (!matchSub(s, offset))
+			{
 				buf.add(s.substr(offset));
 				break;
 			}
 			var p = matchedPos();
 			buf.add(s.substr(offset, p.pos - offset));
 			buf.add(f(this));
-			if (p.len == 0) {
+			if (p.len == 0)
+			{
 				buf.add(s.substr(p.pos, 1));
 				offset = p.pos + 1;
 			}
 			else
 				offset = p.pos + p.len;
-		} while (r.global);
+		}
+		while (r.global);
 		if (!r.global && offset > 0 && offset < s.length)
 			buf.add(s.substr(offset));
-		return buf.toString();
+		return buf.toString();*/
 	}
-}
-
-@:native("RegExp")
-private extern class HaxeRegExp extends js.RegExp {
-	var m:js.RegExp.RegExpMatch;
-	var s:String;
 }
