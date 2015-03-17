@@ -69,7 +69,7 @@ enum ValueType
 
 	public static function resolveClass( name : String ) : Class<Dynamic> untyped
 	{
-		var cl : Class<Dynamic> = _hxClasses[name];
+		var cl : Class<Dynamic> = hxClasses[name];
 		// ensure that this is a class
 		if ( cl == null || !lua.Boot.isClass(cl) )
 			return null;
@@ -78,7 +78,7 @@ enum ValueType
 
 	public static function resolveEnum( name : String ) : Enum<Dynamic> untyped
 	{
-		var e : Dynamic = _hxClasses[name];
+		var e : Dynamic = hxClasses[name];
 		// ensure that this is an enum
 		if ( e == null || !lua.Boot.isEnum(e) )
 			return null;
@@ -146,9 +146,21 @@ enum ValueType
 	public static function getInstanceFields( c : Class<Dynamic> ) : Array<String>
 	{
 		var a = [];
-		untyped __lua__("--for(var i in c.prototype) a.push(i)");
+
+		// TODO untyped __lua__("--for(var i in c.prototype) a.push(i)");
+
+		untyped __lua__("for key, value in pairs (c) do a:push(key); end");
+
 		a.remove("__class__");
 		a.remove("__properties__");
+
+		a.remove("__name__");
+		a.remove("__interfaces__");
+		a.remove("__properties__");
+		a.remove("__super__");
+		a.remove("__meta__");
+		a.remove("prototype");
+
 		return a;
 	}
 
@@ -247,6 +259,7 @@ enum ValueType
 			var e = a.__enum__;
 			if ( e != b.__enum__ || e == null )
 				return false;
+			if (lua.Lib.getmetatable(a) != lua.Lib.getmetatable(b)) return false;
 		}
 		catch ( e : Dynamic )
 		{
