@@ -50,6 +50,8 @@ class StringTools {
 			return untyped cs.system.Uri.EscapeDataString(s);
 		#elseif python
 			return python.lib.urllib.Parse.quote(s, "");
+		#elseif lua
+			return lua.Boot.urlEncode(s);
 		#else
 			return null;
 		#end
