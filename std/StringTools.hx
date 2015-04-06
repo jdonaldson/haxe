@@ -390,6 +390,8 @@ class StringTools {
 		return (untyped s).charCodeAt(index);
 		#elseif python
 		return if (index >= s.length) -1 else python.internal.UBuiltins.ord(python.Syntax.arrayAccess(s, index));
+		#elseif lua
+		return lua.StringTools.byte(s,index+1);
 		#else
 		return untyped s.cca(index);
 		#end
