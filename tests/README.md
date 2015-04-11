@@ -6,7 +6,7 @@ We have a number of test suites, which are placed in their own folders in this d
 
  1. Change to this directory.
  2. Compile the script: `haxe RunCi.hxml`.
- 3. Define the test target by `export TEST=$TARGET` (or `set "TEST=$TARGET"` on Windows), where `$TARGET` should be one of `macro`, `neko`, `js`, `php`, `cpp`, `flash9`, `as3`, `java`, `cs`, `python`, or `third-party`. However, `flash9`, `as3`, and `third-party` are not likely to work on local machines (TODO).
+ 3. Define the test target by `export TEST=$TARGET` (or `set "TEST=$TARGET"` on Windows), where `$TARGET` should be one of `macro`, `neko`, `js`, `lua`, `php`, `cpp`, `flash9`, `as3`, `java`, `cs`, `python`, or `third-party`. However, `flash9`, `as3`, and `third-party` are not likely to work on local machines (TODO).
  4. Run it: `neko RunCi.n`.
 
 Note that the script will try to look for test dependencies and install them if they are not found. Look at the `getXXXDependencies` functions for the details.
