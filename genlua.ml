@@ -1160,12 +1160,12 @@ let generate_class ctx c =
 				    ctx.in_value <- None;
 				    ctx.in_loop <- false;
 				    print ctx "function(%s) " (String.concat "," (List.map ident (List.map arg_name f.tf_args)));
-				    newline ctx;
-				    print ctx "local self = {}";
 				    let fblock = fun_block ctx f e.epos in
 				    (match fblock.eexpr with
 				    | TBlock el ->
 					let bend = open_block ctx in
+					newline ctx;
+					print ctx "local self = {}";
 					newline ctx;
 					if (has_prototype ctx c) then (
 					    print ctx "setmetatable(self, {__index=%s.prototype}) " p; newline ctx;
@@ -1173,17 +1173,16 @@ let generate_class ctx c =
 					(* TODO: use nonconflict var instead of prototype *)
 					print ctx "%s.super(%s)" p (String.concat "," ("self" :: (List.map ident (List.map arg_name f.tf_args))));
 					newline ctx;
-					spr ctx "return self"; newline ctx;
-					bend();
-					spr ctx "end"; newline ctx;
+					spr ctx "return self";
+					bend(); newline ctx;
+					spr ctx "end"; newline ctx; newline ctx;
 					let bend = open_block ctx in
 					print ctx "%s.super = function(%s) " p (String.concat "," ("self" :: (List.map ident (List.map arg_name f.tf_args))));
-					newline ctx;
-					List.iter (gen_block_element ctx) el; newline ctx;
-					newline ctx;
+					List.iter (gen_block_element ctx) el;
 					bend();
+					newline ctx;
+					spr ctx "end";
 				    |_ -> ());
-				    spr ctx "end";
 				    ctx.in_value <- fst old;
 				    ctx.in_loop <- snd old;
 				    ctx.separator <- true
@@ -1222,6 +1221,7 @@ let generate_class ctx c =
 	newline ctx;
 	if (has_prototype ctx c) then begin
 		print ctx "%s.prototype = {" p;
+		let bend = open_block ctx in
 		newline ctx;
 
 		List.iter (fun f -> if can_gen_class_field ctx f then gen_class_field ctx c f) c.cl_ordered_fields;
@@ -1243,7 +1243,8 @@ let generate_class ctx c =
 				print ctx "__properties__ =  {%s}" (gen_props props));
 		end;
 
-		print ctx "\n}";
+		bend(); newline ctx;
+		print ctx "}";
 		newline ctx;
 		(match c.cl_super with
 		| None -> ()
