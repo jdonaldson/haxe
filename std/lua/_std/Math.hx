@@ -84,7 +84,7 @@ extern class Math
 		return (f > Math.NEGATIVE_INFINITY && f < Math.POSITIVE_INFINITY);
 	}
 
-	static inline function isNaN( f : Float ) : Bool {
+	static function isNaN( f : Float ) : Bool {
 		return (f != f);
 	}
 
