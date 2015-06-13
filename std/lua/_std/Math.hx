@@ -61,13 +61,11 @@ class Math
 	public static inline function min(a:Float, b:Float):Float   return lua.Math.min(a,b);
 	public static inline function pow(v:Float, exp:Float):Float return lua.Math.pow(v,exp);
 
-	public static inline function round(v:Float):Int {
-		return Std.int(v + 0.5);
-	}
 
 	public static inline function ffloor( v : Float ) : Float return floor(v); 
 	public static inline function fceil( v : Float ) : Float return ceil(v);
 	public static inline function fround( v : Float ) : Float return round(v);
+	public static inline function round(v:Float):Int return Std.int(v + 0.5);
 
 
 

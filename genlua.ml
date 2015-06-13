@@ -599,7 +599,7 @@ and gen_expr ctx e =
 		spr ctx "while ";
 		gen_cond ctx cond;
 		spr ctx " do ";
-		gen_expr ctx e;
+		gen_block_element ctx e;
 		handle_break();
 		if has_continue e then begin
 		    newline ctx;
@@ -646,7 +646,7 @@ and gen_expr ctx e =
 		print ctx "while( %s.hasNext() ) do" it;
 		let bend = open_block ctx in
 		newline ctx;
-		print ctx "local %s = %s.next()" (ident v.v_name) it;
+		print ctx "local %s = %s.next();" (ident v.v_name) it;
 		gen_block_element ctx e;
 		bend();
 		newline ctx;
@@ -765,11 +765,30 @@ and gen_expr ctx e =
 and gen_block_element ?(after=false) ctx e =
     newline ctx;
     begin match e.eexpr with
-	| TTypeExpr _ | TCast _ -> ();
+	| TTypeExpr _ -> ()
+	| TCast (ce,_) -> gen_block_element ctx ce
+	| TParenthesis pe -> gen_block_element ctx pe
+	| TArrayDecl el -> concat ctx " " (gen_block_element ctx) el;
 	| TBinop (op,e1,e2) when op <> Ast.OpAssign ->
 		let f () = gen_tbinop ctx op e1 e2 in
 		gen_iife_assign ctx f;
-	| TField _ | TArray _ ->
+	| TUnop ((Increment|Decrement) as op,_,e) ->
+		newline ctx;
+		gen_expr ctx e;
+		print ctx " = ";
+		gen_expr ctx e;
+		(match op with
+			| Increment -> print ctx " + 1;"
+			| _ -> print ctx " - 1;"
+		)
+	| TArray (e1,e2) ->
+		gen_block_element ctx e1;
+		gen_block_element ctx e2;
+	| TSwitch (e,[],def) ->
+		(match def with
+		| None -> ()
+		| Some e -> gen_block_element ctx e)
+	| TField _ ->
 		let f () = gen_expr ctx e in
 		gen_iife_assign ctx f;
 	| TConst _ | TLocal _ -> ()
@@ -782,12 +801,13 @@ and gen_block_element ?(after=false) ctx e =
 			| [] -> ()
 			| [e] -> gen_block_element ~after ctx e
 			| _ -> assert false)
-	| TFunction _ ->
-		gen_block_element ~after ctx (mk (TParenthesis e) e.etype e.epos)
+	| TFunction _ -> ()
 	| TObjectDecl fl ->
 		List.iter (fun (_,e) -> gen_block_element ~after ctx e) fl
 	| TVar (v,eo) ->
 		gen_expr ctx e; (* these already generate semicolons*)
+	| TMeta (_,e) ->
+		gen_block_element ctx e
 	| _ ->
 		(* spr ctx (debug_expression e); *)
 		gen_expr ctx e;
@@ -825,6 +845,12 @@ and gen_value ctx e =
 		)
 	in
 	match e.eexpr with
+	| TBinop((OpAssignOp(_)|OpAssign),e1,e2) ->
+		spr ctx "((function()";
+		gen_expr ctx e;
+		spr ctx ";return ";
+		gen_expr ctx e1;
+		spr ctx ";end)())";
 	| TConst _
 	| TLocal _
 	| TArray _
@@ -895,7 +921,6 @@ and gen_value ctx e =
 			gen_cond ctx cond3;
 			spr ctx " then ";
 			gen_block_element ctx (assign e3);
-			semicolon ctx;
 			gen_elseif ctx eo3;
 		    | _ ->
 			spr ctx " else ";
@@ -991,16 +1016,9 @@ and gen_return ctx e eo =
 	    spr ctx "do return end"
     | Some e ->
 	    spr ctx "do return ";
-	    (match e.eexpr with
-		| TBinop(OpAssign, e1, e2) ->
-			spr ctx "(function() ";
-			gen_value ctx e;
-			spr ctx " return ";
-			gen_value ctx e1;
-			spr ctx " end)()";
-		| _ -> gen_value ctx e;
-	    );
-	    spr ctx " end")
+	    gen_value ctx e;
+	    spr ctx " end"
+	)
 
 and gen_iife_assign ctx f =
     spr ctx "(function() return ";
