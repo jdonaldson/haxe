@@ -77,6 +77,8 @@ class StringTools {
 			return untyped cs.system.Uri.UnescapeDataString(s);
 		#elseif python
 			return python.lib.urllib.Parse.unquote(s);
+		#elseif lua 
+			return lua.Boot.urlDecode(s);
 		#else
 			return null;
 		#end
