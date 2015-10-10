@@ -189,6 +189,13 @@ class Boot {
 	static function __string_rec(o : Dynamic, s = 0) {
 		return switch(untyped __type__(o)){
 			case "nil": "null";
+			case "cdata" : {
+				if (Ffi.istype( Ffi.typeof('int32_t'), o)){
+					return untyped "_G.tonumber(o) + ''";
+				} else {
+					return '<cdata>';
+				}
+			}
 			case "number" : {
 				if (o == std.Math.POSITIVE_INFINITY) "Infinity";
 				else if (o == std.Math.NEGATIVE_INFINITY) "-Infinity";
@@ -221,7 +228,7 @@ class Boot {
 				}
 			};
 			default : {
-				throw "Unknown Lua type";
+				throw 'Unknown Lua type ${untyped __type__(o)}' ;
 				null;
 			}
 		}

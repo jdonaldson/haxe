@@ -264,7 +264,7 @@ let is_string_expr e = is_string_type e.etype
 (* /from genphp *)
 
 let gen_constant ctx p = function
-	| TInt i -> print ctx "%ld" i
+	| TInt i -> print ctx "_G.ffi.new(\"int32_t\", %ld)" i
 	| TFloat s -> spr ctx s
 	| TString s -> print ctx "\"%s\"" (Ast.s_escape s)
 	| TBool b -> spr ctx (if b then "true" else "false")
@@ -1622,6 +1622,7 @@ let generate com =
 	if has_feature ctx "Class" || has_feature ctx "Type.getClassName" then add_feature ctx "lua.Boot.isClass";
 	if has_feature ctx "Enum" || has_feature ctx "Type.getEnumName" then add_feature ctx "lua.Boot.isEnum";
 
+	spr ctx "_G.ffi = require('ffi')"; newline ctx;
 	spr ctx "pcall(require, 'bit32') pcall(require, 'bit') bit = bit or bit32"; newline ctx;
 	spr ctx "print = print or (function()end)"; newline ctx;
 

@@ -21,6 +21,8 @@
  */
 package;
 
+import lua.Lua;
+
 class Math
 {
 	public static var PI(get,null) : Float;
