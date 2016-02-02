@@ -46,7 +46,9 @@ class ImportAll {
 		case "cs":
 			if( !Context.defined("cs") ) return;
 		case "python":
-			if( !Context.defined("python") ) return;
+			if ( !Context.defined("python") ) return;
+		case "lua":
+			if( !Context.defined("lua") ) return;
 		case "tools":
 			return;
 		case "build-tool":
