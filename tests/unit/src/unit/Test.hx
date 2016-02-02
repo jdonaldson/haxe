@@ -185,9 +185,9 @@ class Test {
 	}
 
    static function logVerbose(msg:String) {
-      #if (cpp || neko || php)
-      Sys.println(msg);
-      #end
+	  #if (cpp || neko || php)
+	  Sys.println(msg);
+	  #end
    }
 
 	static var count = 0;
@@ -255,7 +255,7 @@ class Test {
 		#if (neko || php || cpp || java || cs || python|| lua)
 		#else
 		if( timer != null ) timer.stop();
-		timer = new haxe.Timer(10000);
+		timer = new haxe.Timer(30000);
 		timer.run = asyncTimeout;
 		#end
 	}
@@ -276,7 +276,7 @@ class Test {
 	}
 
 	static function main() {
-      var verbose = #if ( cpp || neko || php ) Sys.args().indexOf("-v") >= 0 #else false #end;
+	  var verbose = #if ( cpp || neko || php ) Sys.args().indexOf("-v") >= 0 #else false #end;
 
 		#if cs //"Turkey Test" - Issue #996
 		cs.system.threading.Thread.CurrentThread.CurrentCulture = new cs.system.globalization.CultureInfo('tr-TR');
@@ -346,21 +346,26 @@ class Test {
 			//new TestUnspecified(),
 			//new TestRemoting(),
 		];
-		// SPOD tests
-		#if ( (neko || (php && (travis || php_sqlite)) || java || cpp || (cs && travis)) && !macro && !interp)
-		#if ( travis && !(cpp || cs) )
-		if (Sys.getEnv("CI") != null && Sys.systemName() == "Linux")
-		{
-			classes.push(new TestSpod(sys.db.Mysql.connect({
-				host : "localhost",
-				user : "travis",
-				pass : "",
-				port : 3306,
-				database : "haxe_test" })));
+
+
+		#if js
+		if (js.Browser.supported) {
+			classes.push(new TestJQuery());
 		}
 		#end
-      if (verbose)
-         logVerbose("Setup sqlite");
+
+		// SPOD tests
+		#if ( (neko || (php && (travis || appveyor || php_sqlite)) || java || cpp || (cs && (travis || appveyor))) && !macro && !interp)
+		#if ( (travis || appveyor) && !(cpp || cs) )
+		classes.push(new TestSpod(sys.db.Mysql.connect({
+			host : "localhost",
+			user : "travis",
+			pass : "",
+			port : 3306,
+			database : "haxe_test" })));
+		#end
+		if (verbose)
+			logVerbose("Setup sqlite");
 		classes.push(new TestSpod(sys.db.Sqlite.open("db.db3")));
 		#end
 		TestIssues.addIssueClasses("src/unit/issues", "unit.issues");
@@ -373,12 +378,12 @@ class Test {
 			asyncWaits.push(null);
 			for( inst in classes ) {
 				current = Type.getClass(inst);
-            if (verbose)
-               logVerbose("Class " + Std.string(current) );
+			if (verbose)
+			   logVerbose("Class " + Std.string(current) );
 				for( f in Type.getInstanceFields(current) )
 					if( f.substr(0,4) == "test" ) {
-                  if (verbose)
-                     logVerbose("   " + f);
+				  if (verbose)
+					 logVerbose("   " + f);
 						#if fail_eager
 						Reflect.callMethod(inst,Reflect.field(inst,f),[]);
 						#else

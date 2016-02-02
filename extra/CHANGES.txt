@@ -1,20 +1,47 @@
-2015-??-??: 3.3.0
+2016-??-??: 3.3.0
 
 	New features:
 
 	all : support @:resolve on abstracts (#3753)
 	all : support completion on { if the expected type is a structure (#3907)
+	all : support (expr is Type) with mandatory parentheses (#2976)
+	all : allowed passing package dot-paths on command line (#4227)
+	js : introduced new jQuery extern (js.jquery.*) for jQuery 1.11.3 / 2.1.4 (#4377)
+	js : introduced new SWFObject extern (js.swfobject.SWFObject) for SWFObject 2.3.20130521 (#4451)
+	js : added js.Lib.rethrow (#4551)
 
 	Bugfixes:
 
 	all : properly disallowed assigning methods to structures with read-accessors (#3975)
 	all : fixed a bug related to abstract + Int/Float and implicit casts (#4122)
+	all : disallowed duplicate type parameter names (#4293)
+	all : made UInt's >>> behave like >> (#2736)
+	php/as3 : support run-time metadata on interfaces (#2042)
+	php : fixed argument passing to closures (#2587)
+	neko/cpp : fixed various sys.Filesystem issues with Windows drive paths (#3266)
+	as3 : fixed problem with covariant return types (#4222)
+	as3 : fixed rare problem with static initialization order (#3563)
 
 	General improvements and optimizations:
 
 	all : added support for determining minimal types in Map literals (#4196)
 	all : allowed @:native on abstracts to set the name of the implementation class (#4158)
 	all : allowed creating closures on abstract inline methods (#4165)
+	all : type parameter declarations can now have metadata (#3836)
+	all : optimize Math.ceil/floor on constant arguments (#4223)
+	all : allowed extern classes to have field names being used for both static and instance (#4376)
+	python : use spaces instead of tabs to indent the output (#4299)
+
+	Standard Library:
+
+	all : added Lambda.flatten and Lambda.flatMap (#3553)
+	sys : proper quoting/escaping (can be opt-out) for Sys.command and sys.io.Process (#3603)
+
+	Macro features and changes:
+
+	macro : added Context.eval (#2278)
+	macro : added overloads field to ClassField (#3460)
+	macro : added Context.getLocalImports (#3560)
 
 2015-05-12: 3.2.0
 

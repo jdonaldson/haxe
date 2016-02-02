@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -173,7 +173,7 @@ extern class Array<T> {
 
 		The result will include the individual elements' String representations
 		separated by comma. The enclosing [ ] may be missing on some platforms,
-		use Std.string() to get a String representation that is consistent
+		use `Std.string()` to get a String representation that is consistent
 		across platforms.
 	**/
 	function toString() : String;

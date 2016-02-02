@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2014 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -67,7 +67,7 @@ class Input {
 			#if neko
 				untyped __dollar__sset(b,pos,readByte());
 			#elseif php
-				b[pos] = untyped __call__("chr", readByte());
+				b.set(pos, readByte());
 			#elseif cpp
 				b[pos] = untyped readByte();
 			#else

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2014 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -20,6 +20,9 @@
  * DEALINGS IN THE SOFTWARE.
  */
 package js.html.compat;
+
+#if !nodejs
+import js.Lib.nativeThis;
 
 @:keep
 class Float32Array {
@@ -44,7 +47,7 @@ class Float32Array {
 			arr = [];
 			// decode buffer
 			for( i in 0...length ) {
-				var val = untyped buffer.a[offset++] | (buffer.a[offset++] << 8) | (buffer.a[offset++] << 16) | (buffer.a[offset++] << 24);  
+				var val = untyped buffer.a[offset++] | (buffer.a[offset++] << 8) | (buffer.a[offset++] << 16) | (buffer.a[offset++] << 24);
 				arr.push(haxe.io.FPHelper.i32ToFloat(val));
 			}
 			untyped {
@@ -78,32 +81,31 @@ class Float32Array {
 	}
 
 	static function _set( ?arg : Dynamic, ?offset : Int ) {
-		var t : Dynamic = untyped __js__("this");
 		if( Std.is(arg.buffer,ArrayBuffer) ) {
 			var a : Array<Int> = arg;
-			if( arg.byteLength + offset > t.byteLength )
+			if( arg.byteLength + offset > nativeThis.byteLength )
 				throw "set() outside of range";
 			for( i in 0...arg.byteLength )
-				t[i + offset] = a[i];
+				nativeThis[i + offset] = a[i];
 		} else if( Std.is(arg,Array) ) {
 			var a : Array<Int> = arg;
-			if( a.length + offset > t.byteLength )
+			if( a.length + offset > nativeThis.byteLength )
 				throw "set() outside of range";
 			for( i in 0...a.length )
-				t[i + offset] = a[i];
+				nativeThis[i + offset] = a[i];
 		} else
 			throw "TODO";
 	}
 
 	static function _subarray( start : Int, ?end : Int ) {
-		var t : Dynamic = untyped __js__("this");
-		var a = _new(t.slice(start,end));
+		var a = _new(nativeThis.slice(start,end));
 		a.byteOffset = start * 4;
 		return a;
 	}
 
 	static function __init__() {
-		var Float32Array = untyped Function("return typeof Float32Array != 'undefined' ? Float32Array : null")() || _new;
+		var Float32Array = untyped js.Lib.global.Float32Array || _new;
 	}
 
 }
+#end

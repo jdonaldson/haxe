@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2014 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -20,9 +20,11 @@
  * DEALINGS IN THE SOFTWARE.
  */
 package js.html.compat;
+
+#if !nodejs
 import haxe.io.Error;
 
-@:keep
+@:ifFeature("haxe.io.Float32Array.*", "haxe.io.Float64Array.*")
 @:access(js.html.compat.ArrayBuffer)
 class DataView {
 
@@ -138,7 +140,8 @@ class DataView {
 	}
 
 	static function __init__() {
-		var DataView = untyped Function("return typeof DataView != 'undefined' ? DataView : null")() || js.html.compat.DataView;
+		var DataView = untyped js.Lib.global.DataView || js.html.compat.DataView;
 	}
 
 }
+#end

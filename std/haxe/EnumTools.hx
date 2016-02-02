@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -75,7 +75,7 @@ extern class EnumTools {
 		Returns a list of all constructors of enum `e` that require no
 		arguments.
 
-		This may return the empty Array [] if all constructors of `e` require
+		This may return the empty Array `[]` if all constructors of `e` require
 		arguments.
 
 		Otherwise an instance of `e` constructed through each of its non-

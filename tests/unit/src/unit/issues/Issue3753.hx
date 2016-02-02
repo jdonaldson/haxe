@@ -9,7 +9,7 @@ private abstract A(Map<String, String>) from Map<String, String> {
 
 private abstract B(Map<String, String>) from Map<String, String> {
 	@:resolve
-	static function resolve(lhs:B, name:String) {
+	static function resolve2(lhs:B, name:String) {
 		return lhs.get()[name];
 	}
 
@@ -29,7 +29,7 @@ private abstract C(Map<String, String>) from Map<String, String> {
 }
 
 private abstract D(Map<String, String>) from Map<String, String> {
-	@:resolve
+	@:op(a.b)
 	macro static function resolve(ethis:haxe.macro.Expr, name:String) {
 		var s = switch (name) {
 			case "foo": "bar";

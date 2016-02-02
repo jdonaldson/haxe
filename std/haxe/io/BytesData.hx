@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,7 +26,7 @@ package haxe.io;
 #elseif flash
 	typedef BytesData =	flash.utils.ByteArray;
 #elseif php
-	typedef BytesData =	php.NativeString;
+	typedef BytesData = php.BytesData;
 #elseif cpp
 	extern class Unsigned_char__ { }
 	typedef BytesData = Array<Unsigned_char__>;

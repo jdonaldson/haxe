@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2013 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -61,7 +61,7 @@ abstract UInt to Int from Int
 	@:op(A&B) private static function and(lhs:UInt, rhs:UInt):UInt;
 
 	@:op(A<<B) private static function shl(lhs:UInt, rhs:Int):UInt;
-	@:op(A>>B) private static function shr(lhs:UInt, rhs:Int):UInt;
+	@:op(A>>B) private static inline function shr(lhs:UInt, rhs:Int):UInt return lhs >>> rhs;
 	@:op(A>>>B) private static function ushr(lhs:UInt, rhs:Int):UInt;
 
 	@:op(A>B) private static function gt(lhs:UInt, rhs:UInt):Bool;
@@ -70,13 +70,13 @@ abstract UInt to Int from Int
 	@:op(A<=B) private static function lte(lhs:UInt, rhs:UInt):Bool;
 
 	@:op(A>B) private static function gtf(lhs:UInt, rhs:Float):Bool;
-	@:op(A>B) private static function gtf(lhs:Float, rhs:UInt):Bool;
+	@:op(A>B) private static function gtf2(lhs:Float, rhs:UInt):Bool;
 	@:op(A>=B) private static function gtef(lhs:UInt, rhs:Float):Bool;
-	@:op(A>=B) private static function gtef(lhs:Float, rhs:UInt):Bool;
+	@:op(A>=B) private static function gtef2(lhs:Float, rhs:UInt):Bool;
 	@:op(A<B) private static function ltf(lhs:UInt, rhs:Float):Bool;
-	@:op(A<B) private static function ltf(lhs:Float, rhs:UInt):Bool;
+	@:op(A<B) private static function ltf2(lhs:Float, rhs:UInt):Bool;
 	@:op(A<=B) private static function ltef(lhs:UInt, rhs:Float):Bool;
-	@:op(A<=B) private static function ltef(lhs:Float, rhs:UInt):Bool;
+	@:op(A<=B) private static function ltef2(lhs:Float, rhs:UInt):Bool;
 
 	@:op(~A) private static function bneg(t:UInt):UInt;
 
@@ -154,7 +154,7 @@ abstract UInt(Int) from Int to Int {
 	}
 
 	@:op(A >> B) private static inline function shr(a:UInt, b:Int):UInt {
-		return a.toInt() >> b;
+		return a.toInt() >>> b;
 	}
 
 	@:op(A >>> B) private static inline function ushr(a:UInt, b:Int):UInt {
@@ -202,12 +202,12 @@ abstract UInt(Int) from Int to Int {
 	}
 
 	@:commutative @:op(A == B) private static inline function equalsFloat<T:Float>(a:UInt, b:T):Bool {
-        return a.toFloat() == b;
-    }
+		return a.toFloat() == b;
+	}
 
-    @:commutative @:op(A != B) private static inline function notEqualsFloat<T:Float>(a:UInt, b:T):Bool {
-        return a.toFloat() != b;
-    }
+	@:commutative @:op(A != B) private static inline function notEqualsFloat<T:Float>(a:UInt, b:T):Bool {
+		return a.toFloat() != b;
+	}
 
 	@:op(A >= B) private static inline function gteFloat(a:UInt, b:Float):Bool {
 		return a.toFloat() >= b;

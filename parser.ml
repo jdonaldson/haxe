@@ -1,23 +1,20 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2016  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 open Ast
@@ -530,10 +527,6 @@ let lower_ident_or_macro = parser
 	| [< '(Kwd Macro,_) >] -> "macro"
 	| [< '(Kwd Extern,_) >] -> "extern"
 
-let any_enum_ident = parser
-	| [< i = ident >] -> i
-	| [< '(Kwd k,p) when Filename.basename p.pfile = "StdTypes.hx" >] -> s_keyword k, p
-
 let property_ident = parser
 	| [< i, _ = ident >] -> i
 	| [< '(Kwd Dynamic,_) >] -> "dynamic"
@@ -946,7 +939,7 @@ and parse_enum s =
 	let doc = get_doc s in
 	let meta = parse_meta s in
 	match s with parser
-	| [< name, p1 = any_enum_ident; params = parse_constraint_params; s >] ->
+	| [< name, p1 = ident; params = parse_constraint_params; s >] ->
 		let args = (match s with parser
 		| [< '(POpen,_); l = psep Comma parse_enum_param; '(PClose,_) >] -> l
 		| [< >] -> []
@@ -1050,7 +1043,7 @@ and parse_constraint_params = parser
 	| [< >] -> []
 
 and parse_constraint_param = parser
-	| [< name = type_name; s >] ->
+	| [< meta = parse_meta; name = type_name; s >] ->
 		let params = (match s with parser
 			| [< >] -> []
 		) in
@@ -1066,6 +1059,7 @@ and parse_constraint_param = parser
 			tp_name = name;
 			tp_params = params;
 			tp_constraints = ctl;
+			tp_meta = meta;
 		}
 
 and parse_class_herit = parser
@@ -1314,6 +1308,7 @@ and expr_next e1 = parser
 		if is_resuming p then display (EDisplay (e1,false),p);
 		(match s with parser
 		| [< '(Kwd Macro,p2) when p.pmax = p2.pmin; s >] -> expr_next (EField (e1,"macro") , punion (pos e1) p2) s
+		| [< '(Kwd Extern,p2) when p.pmax = p2.pmin; s >] -> expr_next (EField (e1,"extern") , punion (pos e1) p2) s
 		| [< '(Kwd New,p2) when p.pmax = p2.pmin; s >] -> expr_next (EField (e1,"new") , punion (pos e1) p2) s
 		| [< '(Const (Ident f),p2) when p.pmax = p2.pmin; s >] -> expr_next (EField (e1,f) , punion (pos e1) p2) s
 		| [< '(Dollar v,p2); s >] -> expr_next (EField (e1,"$"^v) , punion (pos e1) p2) s

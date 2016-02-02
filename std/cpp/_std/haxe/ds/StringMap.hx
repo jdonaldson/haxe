@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -46,6 +46,7 @@ package haxe.ds;
   inline Void set(Dynamic &key, const VALUE &value) { set( (String)key, value ); return null(); }
 ")
 @:coreApi class StringMap<T> implements haxe.Constraints.IMap<String,T> {
+	@:ifFeature("haxe.ds.StringMap.*")
 	private var h : Dynamic;
 
 	public function new() : Void { }

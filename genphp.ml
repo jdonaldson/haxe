@@ -1,23 +1,20 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2016  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 open Ast
@@ -70,6 +67,8 @@ type context = {
 	mutable inline_methods : inline_method list;
 	mutable lib_path : string;
 }
+
+let follow = Abstract.follow_with_abstracts
 
 let join_class_path path separator =
 	let result = match fst path, snd path with
@@ -307,8 +306,11 @@ let is_keyword n =
 	| "include_once" | "isset" | "list" | "namespace" | "print" | "require" | "require_once"
 	| "unset" | "use" | "__function__" | "__class__" | "__method__" | "final"
 	| "php_user_filter" | "protected" | "abstract" | "__set" | "__get" | "__call"
-	| "clone" | "instanceof" | "break" | "case" | "class" | "continue" | "default" | "do" | "else" | "extends" | "for" | "function" | "if" | "new" | "return" | "static" | "switch" | "var" | "while" | "interface" | "implements" | "public" | "private" | "try" | "catch" | "throw" -> true
-	| "goto"
+	| "clone" | "instanceof" | "break" | "case" | "class" | "continue" | "default"
+	| "do" | "else" | "extends" | "for" | "function" | "if" | "new" | "return"
+	| "static" | "switch" | "var" | "while" | "interface" | "implements" | "public"
+	| "private" | "try" | "catch" | "throw" | "goto" | "yield"
+		-> true
 	| _ -> false
 
 let s_ident n =
@@ -361,7 +363,7 @@ let init com cwd path def_type =
 	let ch = open_out (String.concat "/" dir ^ "/" ^ (filename path) ^ (if def_type = 0 then ".class" else if def_type = 1 then ".enum"  else if def_type = 2 then ".interface" else ".extern") ^ ".php") in
 	let imports = Hashtbl.create 0 in
 	Hashtbl.add imports (snd path) [fst path];
-	{
+	let ctx = {
 		com = com;
 		stack = stack_init com false;
 		tabs = "";
@@ -390,7 +392,10 @@ let init com cwd path def_type =
 		inline_index = 0;
 		in_block = false;
 		lib_path = match com.php_lib with None -> "lib" | Some s -> s;
-	}
+	} in
+	Codegen.map_source_header com (fun s -> print ctx "// %s\n" s);
+	ctx
+
 let unsupported msg p = error ("This expression cannot be generated to PHP: " ^ msg) p
 
 let newline ctx =
@@ -886,25 +891,32 @@ and gen_inline_function ctx f hasthis p =
 	ctx.in_value <- Some "closure";
 
 	let args a = List.map (fun (v,_) -> v.v_name) a in
-	let arguments = ref [] in
 
-	if hasthis then begin arguments := "this" :: !arguments end;
+	let used_locals = ref PMap.empty in
 
-	PMap.iter (fun n _ -> arguments := !arguments @ [n]) old_li;
+	let rec loop e = match e.eexpr with
+		| TLocal v when not (start_with v.v_name "__hx__") && PMap.mem v.v_name old_l ->
+			used_locals := PMap.add v.v_name v.v_name !used_locals
+		| _ ->
+			Type.iter loop e
+	in
+	loop f.tf_expr;
 
 	spr ctx "array(new _hx_lambda(array(";
 
 	let c = ref 0 in
 
-	List.iter (fun a ->
+	let print_arg a =
 		if !c > 0 then spr ctx ", ";
 		incr c;
 		print ctx "&$%s" a;
-	) (remove_internals !arguments);
+	in
+	if hasthis then print_arg "this";
+	PMap.iter (fun _ a -> print_arg a) !used_locals;
 
 	spr ctx "), \"";
 
-	spr ctx (inline_function ctx (args f.tf_args) hasthis (fun_block ctx f p));
+	spr ctx (inline_function ctx (args f.tf_args) hasthis !used_locals (fun_block ctx f p));
 	print ctx "\"), 'execute')";
 
 	ctx.in_value <- old;
@@ -1215,11 +1227,13 @@ and gen_expr ctx e =
 				let tmp = define_local ctx "_t" in
 				print ctx "(is_object($%s = " tmp;
 				gen_field_op ctx e1;
-				print ctx ") && !($%s instanceof Enum) ? $%s%s" tmp tmp s_phop;
+				print ctx ") && ($%s instanceof Enum) ? $%s%s" tmp tmp s_op;
 				gen_field_op ctx e2;
-				print ctx " : $%s%s" tmp s_op;
+				print ctx " : ";
+				if op = Ast.OpNotEq then spr ctx "!";
+				print ctx "_hx_equal($%s, " tmp;
 				gen_field_op ctx e2;
-				spr ctx ")";
+				spr ctx "))";
 			end
 		| Ast.OpGt | Ast.OpGte | Ast.OpLt | Ast.OpLte when is_string_expr e1 ->
 			spr ctx "(strcmp(";
@@ -1680,7 +1694,7 @@ and inline_block ctx e =
 
 		ctx.inline_methods <- ctx.inline_methods @ [block]
 
-and inline_function ctx args hasthis e =
+and inline_function ctx args hasthis used_args e =
 		let index = ctx.inline_index in
 		ctx.inline_index <- ctx.inline_index + 1;
 		let block = {
@@ -1689,9 +1703,9 @@ and inline_function ctx args hasthis e =
 			ihasthis = hasthis; (* param this *)
 			iarguments = args;
 			iexpr = e;
-			ilocals = ctx.locals;
+			ilocals = used_args;
 			iin_block = false;
-			iinv_locals = ctx.inv_locals;
+			iinv_locals = used_args;
 		} in
 
 		ctx.inline_methods <- ctx.inline_methods @ [block];
@@ -2032,6 +2046,7 @@ let generate_class ctx c =
 		} in
 		ctx.constructor_block <- true;
 		generate_field ctx false f;
+		ctx.constructor_block <- false;
 	);
 
 	List.iter (generate_field ctx false) c.cl_ordered_fields;
@@ -2123,6 +2138,8 @@ let createmain com e =
 
 	spr ctx "if(version_compare(PHP_VERSION, '5.1.0', '<')) {
     exit('Your current PHP version is: ' . PHP_VERSION . '. Haxe/PHP generates code for version 5.1.0 or later');
+} else if(version_compare(PHP_VERSION, '5.4.0', '<')) {
+	trigger_error('Your current PHP version is: ' . PHP_VERSION . '. Code generated by Haxe/PHP might not work for versions < 5.4.0', E_USER_WARNING);
 }";
 	newline ctx;
 	newline ctx;

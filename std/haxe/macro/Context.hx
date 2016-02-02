@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -175,6 +175,15 @@ class Context {
 	**/
 	public static function getLocalUsing() :  Array<Type.Ref<Type.ClassType>> {
 		return load("local_using", 0)();
+	}
+
+	/**
+		Returns an `Array` of all imports in the context the macro was called.
+
+		Modifying the returned array has no effect on the compiler.
+	**/
+	public static function getLocalImports() :  Array<ImportExpr> {
+		return load("local_imports", 0)();
 	}
 
 	/**
@@ -369,7 +378,7 @@ class Context {
 	}
 
 	/**
-		Returns true if `t1` and `t2` unify, false otherwise.
+		Tries to unify `t1` and `t2` and returns `true` if successful.
 	**/
 	public static function unify( t1 : Type, t2 : Type) : Bool {
 		return load("unify", 2)(t1, t2);
@@ -382,6 +391,15 @@ class Context {
 	**/
 	public static function follow( t : Type, ?once : Bool ) : Type {
 		return load("follow", 2)(t,once);
+	}
+
+	/**
+		Follows a type, including abstracts' underlying implementation
+
+		See `haxe.macro.TypeTools.followWithAbstracts` for details.
+	**/
+	public static function followWithAbstracts(t : Type, once : Bool = false ) : Type {
+		return load("follow_with_abstracts", 2)(t,once);
 	}
 
 	/**
@@ -421,6 +439,11 @@ class Context {
 		The resource is then available using the `haxe.macro.Resource` API.
 
 		If a previous resource was bound to `name`, it is overwritten.
+		
+		Compilation server : when using the compilation server, the resource is bound
+		to the Haxe module which calls the macro, so it will be included again if
+		that module is reused. If this resource concerns several modules, prefix its
+		name with a $ sign, this will bind it to the macro module instead.
 	**/
 	public static function addResource( name : String, data : haxe.io.Bytes ) {
 		load("add_resource",2)(untyped name.__s,data.getData());
@@ -481,6 +504,34 @@ class Context {
 	@:require(haxe_ver >= 3.2)
 	public static function storeTypedExpr( t : Type.TypedExpr ) : Expr {
 		return load("store_typed_expr",1)(t);
+	}
+
+	/**
+		Evaluates `e` as macro code.
+
+		Any call to this function takes effect when the macro is executed, not
+		during typing. As a consequence, this function can not introduce new
+		local variables into the macro context and may have other restrictions.
+
+		Usage example:
+
+		```haxe
+		var e = macro function(i) return i * 2;
+		var f:Int -> Int = haxe.macro.Context.eval(e);
+		trace(f(2)); // 4
+		```
+
+		Code passed in from outside the macro cannot reference anything in its
+		context, such as local variables. However, it is possible to reference
+		static methods.
+
+		This method should be considered experimental.
+
+		If `e` is null, the result is unspecified.
+	**/
+	@:require(haxe_ver >= 3.3)
+	public static function eval( e : Expr ) : Dynamic {
+		return load("eval",1)(e);
 	}
 
 	/**

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -269,6 +269,7 @@ enum ValueType {
 		return untyped if( e.params == null ) [] else e.params;
 	}
 
+	@:extern
 	public inline static function enumIndex( e : EnumValue ) : Int {
 		return untyped e.index;
 	}

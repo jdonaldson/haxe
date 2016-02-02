@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -42,7 +42,7 @@ class Md5 {
 		#if neko
 			return haxe.io.Bytes.ofData(make_md5(b.getData()));
 		#elseif php
-			return haxe.io.Bytes.ofData(untyped __call__("md5", b.getData(), true));
+			return haxe.io.Bytes.ofData( haxe.io.BytesData.ofString(untyped __call__("md5", b.getData().toString(), true)));
 		#else
 			var h = new Md5().doEncode(bytes2blks(b));
 			var out = haxe.io.Bytes.alloc(16);

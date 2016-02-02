@@ -90,6 +90,16 @@ class RunCi {
 		Sys.exit(exitCode);
 	}
 
+	static function isAptPackageInstalled(aptPackage:String):Bool {
+		return commandSucceed("dpkg-query", ["-W", "-f='${Status}'", aptPackage]);
+	}
+
+	static function requireAptPackages(packages:Array<String>):Void {
+		var notYetInstalled = [for (p in packages) if (!isAptPackageInstalled(p)) p];
+		if (notYetInstalled.length > 0)
+			runCommand("sudo", ["apt-get", "install", "-y"].concat(notYetInstalled), true);
+	}
+
 	static function haxelibInstallGit(account:String, repository:String, ?branch:String, ?srcPath:String, useRetry:Bool = false, ?altName:String):Void {
 		var name:String = (altName == null) ? repository : altName;
 		try {
@@ -158,7 +168,7 @@ class RunCi {
 				Sys.putEnv("DISPLAY", ":99.0");
 				runCommand("sh", ["-e", "/etc/init.d/xvfb", "start"]);
 				Sys.putEnv("AUDIODEV", "null");
-				runCommand("sudo", ["apt-get", "install", "-qq", "libgd2-xpm", "ia32-libs", "ia32-libs-multiarch"], true);
+				requireAptPackages(["libgd2-xpm", "ia32-libs", "ia32-libs-multiarch"]);
 				runCommand("wget", ["-nv", "http://fpdownload.macromedia.com/pub/flashplayer/updaters/11/flashplayer_11_sa_debug.i386.tar.gz"], true);
 				runCommand("tar", ["-xf", "flashplayer_11_sa_debug.i386.tar.gz", "-C", Sys.getEnv("HOME")]);
 				File.saveContent(mmcfgPath, "ErrorReportingEnable=1\nTraceOutputFileEnable=1");
@@ -172,7 +182,12 @@ class RunCi {
 		}
 	}
 
-	static function runFlash(swf:String):Void {
+	/**
+		Run a Flash swf file.
+		Return whether the test is successful or not.
+		It detemines the test result by reading the flashlog.txt, looking for "SUCCESS: true".
+	*/
+	static function runFlash(swf:String):Bool {
 		swf = FileSystem.fullPath(swf);
 		Sys.println('going to run $swf');
 		switch (systemName) {
@@ -199,7 +214,7 @@ class RunCi {
 		}
 		if (!FileSystem.exists(flashlogPath)) {
 			failMsg('$flashlogPath not found.');
-			Sys.exit(1);
+			return false;
 		}
 
 		//read flashlog.txt continously
@@ -210,11 +225,13 @@ class RunCi {
 				line = traceProcess.stdout.readLine();
 				Sys.println(line);
 				if (line.indexOf("SUCCESS: ") >= 0) {
-					Sys.exit(line.indexOf("SUCCESS: true") >= 0 ? 0 : 1);
+					return line.indexOf("SUCCESS: true") >= 0;
 				}
-			} catch (e:haxe.io.Eof) {}
+			} catch (e:haxe.io.Eof) {
+				break;
+			}
 		}
-		Sys.exit(1);
+		return false;
 	}
 
 	static function runCs(exe:String, ?args:Array<String>):Void {
@@ -225,6 +242,12 @@ class RunCi {
 				runCommand("mono", [exe].concat(args));
 			case "Windows":
 				runCommand(exe, args);
+				switch (ci) {
+					case AppVeyor:
+						runCommand("mono", [exe].concat(args));
+					case _:
+						//pass
+				}
 		}
 	}
 
@@ -299,8 +322,26 @@ class RunCi {
 
 	static function commandSucceed(cmd:String, args:Array<String>):Bool {
 		return try {
-			new Process(cmd, args).exitCode() == 0;
+			var p = new Process(cmd, args);
+			var succeed = p.exitCode() == 0;
+			p.close();
+			succeed;
 		} catch(e:Dynamic) false;
+	}
+
+	static function commandResult(cmd:String, args:Array<String>):{
+		stdout:String,
+		stderr:String,
+		exitCode:Int
+	} {
+		var p = new Process(cmd, args);
+		var out = {
+			stdout: p.stdout.readAll().toString(),
+			stderr: p.stderr.readAll().toString(),
+			exitCode: p.exitCode()
+		}
+		p.close();
+		return out;
 	}
 
 	static function addToPATH(path:String):Void {
@@ -318,8 +359,7 @@ class RunCi {
 				if (commandSucceed("php", ["-v"])) {
 					infoMsg('php has already been installed.');
 				} else {
-					runCommand("sudo", ["apt-get", "install", "php5", "-qq"], true);
-					runCommand("sudo", ["apt-get", "install", "php5-mysql", "php5-sqlite", "-qq"], true);
+					requireAptPackages(["php5-cli", "php5-mysql", "php5-sqlite"]);
 				}
 			case "Mac":
 				//pass
@@ -341,7 +381,7 @@ class RunCi {
 		//hxcpp dependencies
 		switch (systemName) {
 			case "Linux":
-				runCommand("sudo", ["apt-get", "install", "gcc-multilib", "g++-multilib", "-qq"], true);
+				requireAptPackages(["gcc-multilib", "g++-multilib"]);
 			case "Mac":
 				//pass
 		}
@@ -381,7 +421,7 @@ class RunCi {
 				if (commandSucceed("node", ["-v"])) {
 					infoMsg('node has already been installed.');
 				} else {
-					runCommand("sudo", ["apt-get", "install", "nodejs", "-qq"], true);
+					requireAptPackages(["nodejs"]);
 				}
 			case "Mac":
 				//pass
@@ -396,7 +436,7 @@ class RunCi {
 				if (commandSucceed("mono", ["--version"]))
 					infoMsg('mono has already been installed.');
 				else
-					runCommand("sudo", ["apt-get", "install", "mono-devel", "mono-mcs", "-qq"], true);
+					requireAptPackages(["mono-devel", "mono-mcs"]);
 				runCommand("mono", ["--version"]);
 			case "Mac":
 				if (commandSucceed("mono", ["--version"]))
@@ -405,7 +445,13 @@ class RunCi {
 					runCommand("brew", ["install", "mono"], true);
 				runCommand("mono", ["--version"]);
 			case "Windows":
-				//pass
+				switch (ci) {
+					case AppVeyor:
+						addToPATH("C:\\Program Files (x86)\\Mono\\bin");
+						runCommand("mono", ["--version"]);
+					case _:
+						//pass
+				}
 		}
 
 		haxelibInstallGit("HaxeFoundation", "hxcs", true);
@@ -447,7 +493,7 @@ class RunCi {
 				if (commandSucceed("python3", ["-V"]))
 					infoMsg('python3 has already been installed.');
 				else
-					runCommand("sudo", ["apt-get", "install", "python3", "-qq"], true);
+					requireAptPackages(["python3"]);
 				runCommand("python3", ["-V"]);
 
 				var pypy = "pypy3";
@@ -476,6 +522,13 @@ class RunCi {
 				runCommand("pypy3", ["-V"]);
 
 				return ["python3", "pypy3"];
+			case "Windows":
+				if (commandSucceed("python3", ["-V"]))
+					infoMsg('python3 has already been installed.');
+				else
+					throw "please install python 3.x and make it available as python3 in PATH";
+				runCommand("python3", ["-V"]);
+				return ["python3"];
 		}
 
 		return [];
@@ -495,9 +548,224 @@ class RunCi {
 	static var sysDir(default, never) = cwd + "sys/";
 	static var optDir(default, never) = cwd + "optimization/";
 	static var miscDir(default, never) = cwd + "misc/";
+	static var gitInfo(get, null):{repo:String, branch:String, commit:String, timestamp:Float, date:String};
+	static function get_gitInfo() return if (gitInfo != null) gitInfo else gitInfo = {
+		repo: switch (ci) {
+			case TravisCI:
+				Sys.getEnv("TRAVIS_REPO_SLUG");
+			case AppVeyor:
+				Sys.getEnv("APPVEYOR_PROJECT_SLUG");
+			case _:
+				commandResult("git", ["config", "--get", "remote.origin.url"]).stdout.trim();
+		},
+		branch: switch (ci) {
+			case TravisCI:
+				Sys.getEnv("TRAVIS_BRANCH");
+			case AppVeyor:
+				Sys.getEnv("APPVEYOR_REPO_BRANCH");
+			case _:
+				commandResult("git", ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.trim();
+		},
+		commit: commandResult("git", ["rev-parse", "HEAD"]).stdout.trim(),
+		timestamp: Std.parseFloat(commandResult("git", ["show", "-s", "--format=%ct", "HEAD"]).stdout),
+		date: {
+			var gitTime = commandResult("git", ["show", "-s", "--format=%ct", "HEAD"]).stdout;
+			var tzd = {
+				var z = Date.fromTime(0);
+				z.getHours() * 60 * 60 * 1000 + z.getMinutes() * 60 * 1000;
+			}
+			// make time in the UTC time zone
+			var time = Date.fromTime(Std.parseFloat(gitTime) * 1000 - tzd);
+			DateTools.format(time, "%FT%TZ");
+		}
+	}
+	static var haxeVer(default, never) = {
+		var haxe_ver = haxe.macro.Compiler.getDefine("haxe_ver");
+		switch (haxe_ver.split(".")) {
+			case [major]:
+				major;
+			case [major, minor] if (minor.length == 1):
+				'${major}.${minor}';
+			case [major, minor] if (minor.length > 1):
+				var minor = minor.charAt(0);
+				var patch = Std.parseInt(minor.substr(1));
+				'${major}.${minor}.${patch}';
+			case _:
+				throw haxe_ver;
+		}
+	}
+
+	static function bintray():Void {
+		if (
+			Sys.getEnv("BINTRAY") != null &&
+			Sys.getEnv("BINTRAY_USERNAME") != null &&
+			Sys.getEnv("BINTRAY_API_KEY") != null
+		) {
+			changeDirectory(repoDir);
+
+			// generate bintray config
+			var tpl = new Template(File.getContent("extra/bintray.tpl.json"));
+			var compatDate = ~/[^0-9]/g.replace(gitInfo.date, "");
+			var json = tpl.execute({
+				packageSubject: {
+					var sub = Sys.getEnv("BINTRAY_SUBJECT");
+					sub != null ? sub : Sys.getEnv("BINTRAY_USERNAME");
+				},
+				os: systemName.toLowerCase(),
+				versionName: '${haxeVer}+${compatDate}.${gitInfo.commit.substr(0,7)}',
+				versionDesc: "Automated CI build.",
+				gitRepo: gitInfo.repo,
+				gitBranch: gitInfo.branch,
+				gitCommit: gitInfo.commit,
+				gitDate: gitInfo.date,
+			});
+			var path = "extra/bintray.json";
+			File.saveContent("extra/bintray.json", json);
+			infoMsg("saved " + FileSystem.absolutePath(path) + " with content:");
+			Sys.println(json);
+
+			// generate doc
+			runCommand("make", ["-s", "install_dox"]);
+			runCommand("make", ["-s", "package_doc"]);
+		}
+	}
+
+	static function saveOutput():Void {
+		if (Sys.getEnv("HAXECI_GH_TOKEN") == null) {
+			infoMsg("Missing HAXECI_GH_TOKEN. Will not save output.");
+			return;
+		}
+
+		changeDirectory(repoDir);
+		var haxe_output = Path.join([repoDir, "haxe-output"]);
+		var gitInfo = gitInfo;
+		var TEST = Sys.getEnv("TEST");
+		var TRAVIS_OS_NAME = Sys.getEnv("TRAVIS_OS_NAME");
+		var haxe_output_branch = '${gitInfo.branch}_travisci_${TRAVIS_OS_NAME}_${TEST}';
+		var haxe_output_repo = "github.com/HaxeFoundation/haxe-output.git";
+
+		function haxeCommitTime(sha:String):Float {
+			var cwd = Sys.getCwd();
+			Sys.setCwd(repoDir);
+			var time = Std.parseFloat(commandResult("git", ["show", "-s", "--pretty=%ct", sha]).stdout);
+			Sys.setCwd(cwd);
+			return time;
+		}
+
+		function save():Void {
+			// prepare haxe-output repo
+			runCommand("git", ["clone", 'https://${Sys.getEnv("HAXECI_GH_TOKEN")}@${haxe_output_repo}', haxe_output]);
+			changeDirectory(haxe_output);
+			runCommand("git", ["config", "user.email", "haxe-ci@onthewings.net"]);
+			runCommand("git", ["config", "user.name", "Haxe CI Bot"]);
+
+			// check to see whether the haxe repo branch has been created in haxe-output
+			var firstOutputBranch = switch (Sys.command("git", ["ls-remote", "--exit-code", "origin", haxe_output_branch])) {
+				case 0: false;
+				case 2: true;
+				case exitcode: throw "unknown exit code: " + exitcode;
+			}
+
+			// switch to the branch
+			if (firstOutputBranch) {
+				runCommand("git", ["checkout", "-B", haxe_output_branch]);
+			} else {
+				runCommand("git", ["checkout", "-B", haxe_output_branch, "--track", "origin/" + haxe_output_branch]);
+			}
+
+			// check to see whether this will be the first push of this haxe repo commit
+			var firstOutputCommit = firstOutputBranch || {
+				var lastLog = commandResult("git", ["show", "-s", "--pretty=format:%B", "HEAD"]).stdout;
+				var commitRe = ~/[a-f0-9]{40}/;
+				if (!commitRe.match(lastLog)) {
+					infoMsg("No commit sha found in log: " + lastLog);
+					true;
+				} else {
+					var lastCommit = commitRe.matched(0);
+
+					// check to see whether this commit is newer than the last pushed one
+					// in case e.g. the current build is a rebuild of an old commit
+					if (haxeCommitTime(lastCommit) > gitInfo.timestamp) {
+						throw "There exists output with a later commit in the haxe-output repo.";
+					}
+
+					lastCommit != gitInfo.commit;
+				}
+			};
+
+			// Remove all the old output first.
+			// It is because there may be files no longer emitted by the current build.
+			if (firstOutputCommit) {
+				runCommand("rm", ["-rf", "tests"]);
+			}
+
+			// get the outputs by listing the files/folders ignored by git
+			changeDirectory(cwd);
+			var stdout = {
+				var proc = new Process("git", ["status", "--ignored", "--porcelain", cwd]);
+				var out = proc.stdout.readAll().toString();
+				proc.close();
+				out;
+			};
+			var outputs = stdout.split("\n")
+				.filter(function(s) return s.startsWith("!! "))
+				.map(function(s) return s.substr("!! ".length));
+
+			// copy all the outputs to haxe-output
+			FileSystem.createDirectory(haxe_output);
+			for (item in outputs) {
+				var orig = Path.join([repoDir, item]);
+				var dest = Path.join([haxe_output, item]);
+				if (FileSystem.isDirectory(orig)) {
+					FileSystem.createDirectory(dest);
+				} else {
+					FileSystem.createDirectory(Path.directory(dest));
+				}
+				runCommand("cp", ["-rf", orig, dest]);
+			}
+			changeDirectory(haxe_output);
+			runCommand("git", ["add", haxe_output]);
+			var commitMsg = [
+				'-m', '${Sys.getEnv("TRAVIS_JOB_NUMBER")} ${TEST} https://github.com/HaxeFoundation/haxe/commit/${gitInfo.commit}',
+				'-m', 'https://travis-ci.org/HaxeFoundation/haxe/jobs/${Sys.getEnv("TRAVIS_JOB_ID")}',
+			];
+			runCommand("git", ["commit", "-q", "--allow-empty"].concat(commitMsg));
+		}
+
+		// try save() for 5 times because the push may fail when the another build push at the same time
+		var pushError = false;
+		for (i in 0...5) {
+			try {
+				save();
+			} catch (e:Dynamic) {
+				infoMsg(e);
+				pushError = false;
+				break;
+			}
+			var pushResult = commandResult("git", ["push", "origin", haxe_output_branch]);
+			if (pushResult.exitCode == 0) {
+				successMsg("push to haxe-output succeed");
+				pushError = false;
+				break;
+			} else {
+				failMsg("push to haxe-output failed");
+				failMsg(pushResult.stderr);
+				pushError = true;
+
+				runCommand("rm", ["-rf", haxe_output]);
+
+				Sys.sleep(Std.random(10));
+			}
+		}
+		if (pushError) {
+			Sys.exit(1);
+		}
+	}
 
 	static function main():Void {
 		Sys.putEnv("OCAMLRUNPARAM", "b");
+
+		bintray();
 
 		var tests:Array<TEST> = switch (Sys.getEnv("TEST")) {
 			case null:
@@ -510,34 +778,23 @@ class RunCi {
 		for (test in tests) {
 			infoMsg('Now test $test');
 			changeDirectory(unitDir);
+
+			var args = switch (ci) {
+				case TravisCI:
+					["-D","travis"];
+				case AppVeyor:
+					["-D","appveyor"];
+				case _:
+					[];
+			}
 			switch (test) {
 				case Macro:
-					runCommand("haxe", ["compile-macro.hxml"]);
+					runCommand("haxe", ["compile-macro.hxml"].concat(args));
 
 					changeDirectory(miscDir);
 					getCsDependencies();
+					getPythonDependencies();
 					runCommand("haxe", ["compile.hxml"]);
-
-					switch (ci) {
-						case AppVeyor:
-							//save time...
-						case _:
-							//generate documentation
-							haxelibInstallGit("Simn", "hxparse", "development", "src", true);
-							haxelibInstallGit("Simn", "hxtemplo", true);
-							haxelibInstallGit("Simn", "hxargs", true);
-							haxelibInstallGit("dpeek", "haxe-markdown", "master", "src", true, "markdown");
-
-							haxelibInstallGit("HaxeFoundation", "hxcpp", true);
-							haxelibInstallGit("HaxeFoundation", "hxjava", true);
-							haxelibInstallGit("HaxeFoundation", "hxcs", true);
-
-							haxelibInstallGit("dpeek", "dox", true);
-							changeDirectory(getHaxelibPath("dox"));
-							runCommand("haxe", ["run.hxml"]);
-							runCommand("haxe", ["gen.hxml"]);
-							haxelibRun(["dox", "-o", "bin/api.zip", "-i", "bin/xml"]);
-					}
 
 					changeDirectory(sysDir);
 					runCommand("haxe", ["compile-macro.hxml"]);
@@ -550,7 +807,7 @@ class RunCi {
 						case TravisCI:
 							changeDirectory(repoDir);
 							runCommand("make", ["BYTECODE=1", "-s"]);
-							runCommand("sudo", ["make", "install", "-s"]);
+							// runCommand("sudo", ["make", "install", "-s"]);
 							changeDirectory(unitDir);
 							runCommand("haxe", ["compile-macro.hxml"]);
 						case AppVeyor:
@@ -561,7 +818,7 @@ class RunCi {
 							// runCommand("haxe", ["compile-macro.hxml"]);
 					}
 				case Neko:
-					runCommand("haxe", ["compile-neko.hxml"]);
+					runCommand("haxe", ["compile-neko.hxml", "-D", "dump", "-D", "dump_ignore_var_ids"].concat(args));
 					runCommand("neko", ["bin/unit.n"]);
 
 					changeDirectory(sysDir);
@@ -569,12 +826,6 @@ class RunCi {
 					runCommand("neko", ["bin/neko/sys.n"]);
 				case Php:
 					getPhpDependencies();
-					var args = switch (ci) {
-						case TravisCI:
-							["-D","travis"];
-						case _:
-							[];
-					}
 					runCommand("haxe", ["compile-php.hxml"].concat(args));
 					runCommand("php", ["bin/php/index.php"]);
 
@@ -584,7 +835,7 @@ class RunCi {
 				case Python:
 					var pys = getPythonDependencies();
 
-					runCommand("haxe", ["compile-python.hxml"]);
+					runCommand("haxe", ["compile-python.hxml"].concat(args));
 					for (py in pys) {
 						runCommand(py, ["bin/unit.py"]);
 					}
@@ -602,7 +853,7 @@ class RunCi {
 					}
 				case Cpp:
 					getCppDependencies();
-					runCommand("haxe", ["compile-cpp.hxml", "-D", "HXCPP_M32"]);
+					runCommand("haxe", ["compile-cpp.hxml", "-D", "HXCPP_M32"].concat(args));
 					runCpp("bin/cpp/Test-debug", []);
 
 					switch (ci) {
@@ -610,44 +861,78 @@ class RunCi {
 							//save time...
 						case _:
 							runCommand("rm", ["-rf", "cpp"]);
-							runCommand("haxe", ["compile-cpp.hxml", "-D", "HXCPP_M64"]);
+							runCommand("haxe", ["compile-cpp.hxml", "-D", "HXCPP_M64"].concat(args));
 							runCpp("bin/cpp/Test-debug", []);
 					}
 
 					changeDirectory(sysDir);
 					runCommand("haxe", ["compile-cpp.hxml"]);
 					runCpp("bin/cpp/Main-debug", []);
+
+					if (Sys.systemName() == "Mac")
+					{
+						changeDirectory(miscDir + "cppObjc");
+						runCommand("haxe", ["build.hxml"]);
+						runCpp("bin/TestObjc-debug");
+					}
 				case Js:
 					getJSDependencies();
 
-					for (flatten in [true, false]) {
-						runCommand("haxe", ["compile-js.hxml"].concat(flatten ? [] : ["-D", "js-unflatten"]));
-						runCommand("node", ["-e", "var unit = require('./bin/unit.js').unit; unit.Test.main(); process.exit(unit.Test.success ? 0 : 1);"]);
-					}
+					var jsOutputs = [
+						for (es5 in       [[], ["-D", "js-es5"]])
+						for (unflatten in [[], ["-D", "js-unflatten"]])
+						for (classic in   [[], ["-D", "js-classic"]])
+						{
+							var extras = args.concat(es5).concat(unflatten).concat(classic);
 
-					if (Sys.getEnv("TRAVIS_SECURE_ENV_VARS") == "true" && systemName == "Linux") {
-						var scVersion = "sc-4.3-linux";
-						runCommand("wget", ['https://saucelabs.com/downloads/${scVersion}.tar.gz'], true);
-						runCommand("tar", ["-xf", '${scVersion}.tar.gz']);
+							runCommand("haxe", ["compile-js.hxml"].concat(extras));
 
-						//start sauce-connect
-						var scReadyFile = "sauce-connect-ready-" + Std.random(100);
-						var sc = new Process('${scVersion}/bin/sc', [
-							"-i", Sys.getEnv("TRAVIS_JOB_NUMBER"),
-							"-f", scReadyFile
-						]);
-						while(!FileSystem.exists(scReadyFile)) {
-							Sys.sleep(0.5);
+							var output = if (extras.length > 0) {
+								"bin/js/" + extras.join("") + "/unit.js";
+							} else {
+								"bin/js/default/unit.js";
+							}
+							var outputDir = Path.directory(output);
+							if (!FileSystem.exists(outputDir)) {
+								FileSystem.createDirectory(outputDir);
+							}
+							FileSystem.rename("bin/unit.js", output);
+							FileSystem.rename("bin/unit.js.map", output + ".map");
+							runCommand("node", ["-e", "var unit = require('./" + output + "').unit; unit.Test.main(); process.exit(unit.Test.success ? 0 : 1);"]);
+							output;
 						}
+					];
+
+					var env = Sys.environment();
+					if (
+						env.exists("SAUCE") &&
+						env.exists("SAUCE_USERNAME") &&
+						env.exists("SAUCE_ACCESS_KEY")
+					) {
+						// sauce-connect should have been started
+
+						// var scVersion = "sc-4.3-linux";
+						// runCommand("wget", ['https://saucelabs.com/downloads/${scVersion}.tar.gz'], true);
+						// runCommand("tar", ["-xf", '${scVersion}.tar.gz']);
+
+						// //start sauce-connect
+						// var scReadyFile = "sauce-connect-ready-" + Std.random(100);
+						// var sc = new Process('${scVersion}/bin/sc', [
+						// 	"-i", Sys.getEnv("TRAVIS_JOB_NUMBER"),
+						// 	"-f", scReadyFile
+						// ]);
+						// while(!FileSystem.exists(scReadyFile)) {
+						// 	Sys.sleep(0.5);
+						// }
 
 						runCommand("npm", ["install", "wd", "q"], true);
 						haxelibInstallGit("dionjwa", "nodejs-std", "master", null, true, "nodejs");
 						runCommand("haxe", ["compile-saucelabs-runner.hxml"]);
 						var server = new Process("nekotools", ["server"]);
-						runCommand("node", ["bin/RunSauceLabs.js", "unit-js.html"]);
+						runCommand("node", ["bin/RunSauceLabs.js"].concat([for (js in jsOutputs) "unit-js.html?js=" + js.urlEncode()]));
 
 						server.close();
-						sc.close();
+						// sc.close();
 					}
 
 					infoMsg("Test optimization:");
@@ -655,7 +940,10 @@ class RunCi {
 					runCommand("haxe", ["run.hxml"]);
 				case Java:
 					getJavaDependencies();
-					runCommand("haxe", ["compile-java.hxml"]);
+					runCommand("haxe", ["compile-java.hxml"].concat(args));
+					runCommand("java", ["-jar", "bin/java/Test-Debug.jar"]);
+
+					runCommand("haxe", ["compile-java.hxml","-dce","no"].concat(args));
 					runCommand("java", ["-jar", "bin/java/Test-Debug.jar"]);
 
 					changeDirectory(sysDir);
@@ -690,6 +978,9 @@ class RunCi {
 					runCommand("haxe", ['compile-cs$compl.hxml']);
 					runCs("bin/cs/bin/Test-Debug.exe");
 
+					runCommand("haxe", ['compile-cs$compl.hxml','-dce','no']);
+					runCs("bin/cs/bin/Test-Debug.exe");
+
 					runCommand("haxe", ['compile-cs-unsafe$compl.hxml']);
 					runCs("bin/cs_unsafe/bin/Test-Debug.exe");
 
@@ -718,8 +1009,10 @@ class RunCi {
 
 				case Flash9:
 					setupFlashPlayerDebugger();
-					runCommand("haxe", ["compile-flash9.hxml", "-D", "fdb"]);
-					runFlash("bin/unit9.swf");
+					runCommand("haxe", ["compile-flash9.hxml", "-D", "fdb", "-D", "dump", "-D", "dump_ignore_var_ids"].concat(args));
+					var success = runFlash("bin/unit9.swf");
+					if (!success)
+						Sys.exit(1);
 				case As3:
 					setupFlashPlayerDebugger();
 
@@ -727,7 +1020,7 @@ class RunCi {
 					if (commandSucceed("mxmlc", ["--version"])) {
 						infoMsg('mxmlc has already been installed.');
 					} else {
-						var flexVersion = "4.14.0";
+						var flexVersion = "4.14.1";
 						runCommand("wget", ['http://archive.apache.org/dist/flex/${flexVersion}/binaries/apache-flex-sdk-${flexVersion}-bin.tar.gz'], true);
 						runCommand("tar", ["-xf", 'apache-flex-sdk-${flexVersion}-bin.tar.gz', "-C", Sys.getEnv("HOME")]);
 						var flexsdkPath = Sys.getEnv("HOME") + '/apache-flex-sdk-${flexVersion}-bin';
@@ -739,8 +1032,10 @@ class RunCi {
 						runCommand("mxmlc", ["--version"]);
 					}
 
-					runCommand("haxe", ["compile-as3.hxml", "-D", "fdb"]);
-					runFlash("bin/unit9_as3.swf");
+					runCommand("haxe", ["compile-as3.hxml", "-D", "fdb"].concat(args));
+					var success = runFlash("bin/unit9_as3.swf");
+					if (!success)
+						Sys.exit(1);
 				case ThirdParty:
 					getPhpDependencies();
 					getJavaDependencies();
@@ -759,6 +1054,20 @@ class RunCi {
 				case t:
 					throw "unknown target: " + t;
 			}
+		}
+
+		if (
+			(switch [ci, systemName] {
+				case [TravisCI, "Linux"]: true;
+				case _: false;
+			})
+			&&
+			Lambda.exists(tests, function(t) return switch (t) {
+				case Js | Cpp | Cs | Java | Php | Python | Neko | Flash9 | As3: true;
+				case _: false;
+			})
+		) {
+			saveOutput();
 		}
 	}
 

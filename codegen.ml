@@ -1,23 +1,20 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2016  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 open Ast
@@ -195,7 +192,7 @@ let extend_remoting ctx c t p async prot =
 				f_type = if async then None else ftype;
 				f_expr = Some (EBlock [expr],p);
 			} in
-			{ cff_name = f.cff_name; cff_pos = p; cff_doc = None; cff_meta = []; cff_access = [APublic]; cff_kind = FFun fd } :: acc
+			{ cff_name = f.cff_name; cff_pos = f.cff_pos; cff_doc = None; cff_meta = []; cff_access = [APublic]; cff_kind = FFun fd } :: acc
 		| _ -> acc
 	in
 	let decls = List.map (fun d ->
@@ -247,6 +244,7 @@ let make_generic ctx ps pt p =
 				| TAbstract(a,tl) -> (s_type_path_underscore a.a_path) ^ (loop_tl tl)
 				| _ when not top -> "_" (* allow unknown/incompatible types as type parameters to retain old behavior *)
 				| TMono _ -> raise (Generic_Exception (("Could not determine type for parameter " ^ s), p))
+				| TDynamic _ -> "Dynamic"
 				| t -> raise (Generic_Exception (("Type parameter must be a class or enum instance (found " ^ (s_type (print_context()) t) ^ ")"), p))
 			and loop_tl tl = match tl with
 				| [] -> ""
@@ -294,6 +292,24 @@ let generic_substitute_expr gctx e =
 			let _, _, f = gctx.ctx.g.do_build_instance gctx.ctx (TClassDecl c) gctx.p in
 			let t = f (List.map (generic_substitute_type gctx) tl) in
 			build_expr {e with eexpr = TField(e1,quick_field t cf.cf_name)}
+		| TTypeExpr (TClassDecl ({cl_kind = KTypeParameter _;} as c)) when Meta.has Meta.Const c.cl_meta ->
+			let rec loop subst = match subst with
+				| (t1,t2) :: subst ->
+					begin match follow t1 with
+						| TInst(c2,_) when c == c2 -> t2
+						| _ -> loop subst
+					end
+				| [] -> raise Not_found
+			in
+			begin try
+				let t = loop gctx.subst in
+				begin match follow t with
+					| TInst({cl_kind = KExpr e},_) -> type_expr gctx.ctx e Value
+					| _ -> error "Only Const type parameters can be used as value" e.epos
+				end
+			with Not_found ->
+				e
+			end
 		| _ ->
 			map_expr_type build_expr (generic_substitute_type gctx) build_var e
 	in
@@ -303,6 +319,7 @@ let has_ctor_constraint c = match c.cl_kind with
 	| KTypeParameter tl ->
 		List.exists (fun t -> match follow t with
 			| TAnon a when PMap.mem "new" a.a_fields -> true
+			| TAbstract({a_path=["haxe"],"Constructible"},_) -> true
 			| _ -> false
 		) tl;
 	| _ -> false
@@ -384,7 +401,24 @@ let rec build_generic ctx c p tl =
 		in
 		List.iter loop tl;
 		let build_field cf_old =
+			(* We have to clone the type parameters (issue #4672). We cannot substitute the constraints immediately because
+		       we need the full substitution list first. *)
+			let param_subst,params = List.fold_left (fun (subst,params) (s,t) -> match follow t with
+				| TInst(c,tl) as t ->
+					let t2 = TInst({c with cl_pos = c.cl_pos;},tl) in
+					(t,t2) :: subst,(s,t2) :: params
+				| _ -> assert false
+			) ([],[]) cf_old.cf_params in
+			let gctx = {gctx with subst = param_subst @ gctx.subst} in
 			let cf_new = {cf_old with cf_pos = cf_old.cf_pos} in (* copy *)
+			(* Type parameter constraints are substituted here. *)
+			cf_new.cf_params <- List.rev_map (fun (s,t) -> match follow t with
+				| TInst({cl_kind = KTypeParameter tl1} as c,_) ->
+					let tl1 = List.map (generic_substitute_type gctx) tl1 in
+					c.cl_kind <- KTypeParameter tl1;
+					s,t
+				| _ -> assert false
+			) params;
 			let f () =
 				let t = generic_substitute_type gctx cf_old.cf_type in
 				ignore (follow t);
@@ -644,7 +678,9 @@ let build_instance ctx mtype p =
 			let r = exc_protect ctx (fun r ->
 				let t = mk_mono() in
 				r := (fun() -> t);
-				unify_raise ctx (f()) t p;
+				let tf = (f()) in
+				unify_raise ctx tf t p;
+				link_dynamic t tf;
 				t
 			) s in
 			delay ctx PForce (fun() -> ignore ((!r)()));
@@ -683,6 +719,14 @@ let on_inherit ctx c p h =
 	| _ ->
 		true
 
+let push_this ctx e = match e.eexpr with
+	| TConst ((TInt _ | TFloat _ | TString _ | TBool _) as ct) ->
+		(EConst (tconst_to_const ct),e.epos),fun () -> ()
+	| _ ->
+		ctx.this_stack <- e :: ctx.this_stack;
+		let er = EMeta((Meta.This,[],e.epos), (EConst(Ident "this"),e.epos)),e.epos in
+		er,fun () -> ctx.this_stack <- List.tl ctx.this_stack
+
 (* -------------------------------------------------------------------------- *)
 (* ABSTRACT CASTS *)
 
@@ -691,7 +735,21 @@ module AbstractCast = struct
 	let cast_stack = ref []
 
 	let make_static_call ctx c cf a pl args t p =
-		make_static_call ctx c cf (apply_params a.a_params pl) args t p
+		if cf.cf_kind = Method MethMacro then begin
+			match args with
+				| [e] ->
+					let e,f = push_this ctx e in
+					ctx.with_type_stack <- (WithType t) :: ctx.with_type_stack;
+					let e = match ctx.g.do_macro ctx MExpr c.cl_path cf.cf_name [e] p with
+						| Some e -> type_expr ctx e Value
+						| None ->  type_expr ctx (EConst (Ident "null"),p) Value
+					in
+					ctx.with_type_stack <- List.tl ctx.with_type_stack;
+					f();
+					e
+				| _ -> assert false
+		end else
+			make_static_call ctx c cf (apply_params a.a_params pl) args t p
 
 	let do_check_cast ctx tleft eright p =
 		let recurse cf f =
@@ -751,7 +809,8 @@ module AbstractCast = struct
 
 	let cast_or_unify_raise ctx tleft eright p =
 		try
-			if ctx.com.display <> DMNone then raise Not_found;
+			(* can't do that anymore because this might miss macro calls (#4315) *)
+			(* if ctx.com.display <> DMNone then raise Not_found; *)
 			do_check_cast ctx tleft eright p
 		with Not_found ->
 			unify_raise ctx eright.etype tleft p;
@@ -760,8 +819,8 @@ module AbstractCast = struct
 	let cast_or_unify ctx tleft eright p =
 		try
 			cast_or_unify_raise ctx tleft eright p
-		with Error (Unify _ as err,_) ->
-			if not ctx.untyped then display_error ctx (error_msg err) p;
+		with Error (Unify l,p) ->
+			raise_or_display ctx l p;
 			eright
 
 	let find_array_access_raise ctx a pl e1 e2o p =
@@ -769,8 +828,6 @@ module AbstractCast = struct
 		let ta = apply_params a.a_params pl a.a_this in
 		let rec loop cfl = match cfl with
 			| [] -> raise Not_found
-			| cf :: cfl when not (Ast.Meta.has Ast.Meta.ArrayAccess cf.cf_meta) ->
-				loop cfl
 			| cf :: cfl ->
 				let monos = List.map (fun _ -> mk_mono()) cf.cf_params in
 				let map t = apply_params a.a_params pl (apply_params cf.cf_params monos t) in
@@ -862,10 +919,18 @@ module AbstractCast = struct
 	let handle_abstract_casts ctx e =
 		let rec loop ctx e = match e.eexpr with
 			| TNew({cl_kind = KAbstractImpl a} as c,pl,el) ->
-				(* a TNew of an abstract implementation is only generated if it is a multi type abstract *)
-				let cf,m = find_multitype_specialization ctx.com a pl e.epos in
-				let e = make_static_call ctx c cf a pl ((mk (TConst TNull) (TAbstract(a,pl)) e.epos) :: el) m e.epos in
-				{e with etype = m}
+				if not (Meta.has Meta.MultiType a.a_meta) then begin
+					(* This must have been a @:generic expansion with a { new } constraint (issue #4364). In this case
+					   let's construct the underlying type. *)
+					match Abstract.get_underlying_type a pl with
+					| TInst(c,tl) as t -> {e with eexpr = TNew(c,tl,el); etype = t}
+					| _ -> error ("Cannot construct " ^ (s_type (print_context()) (TAbstract(a,pl)))) e.epos
+				end else begin
+					(* a TNew of an abstract implementation is only generated if it is a multi type abstract *)
+					let cf,m = find_multitype_specialization ctx.com a pl e.epos in
+					let e = make_static_call ctx c cf a pl ((mk (TConst TNull) (TAbstract(a,pl)) e.epos) :: el) m e.epos in
+					{e with etype = m}
+				end
 			| TCall({eexpr = TField(_,FStatic({cl_path=[],"Std"},{cf_name = "string"}))},[e1]) when (match follow e1.etype with TAbstract({a_impl = Some _},_) -> true | _ -> false) ->
 				begin match follow e1.etype with
 					| TAbstract({a_impl = Some c} as a,tl) ->
@@ -974,6 +1039,7 @@ module PatternMatchConversion = struct
 		let v_known = ref IntMap.empty in
 		let copy v =
 			let v' = alloc_var v.v_name v.v_type in
+			v'.v_meta <- v.v_meta;
 			v_known := IntMap.add v.v_id v' !v_known;
 			v'
 		in
@@ -1027,7 +1093,14 @@ module PatternMatchConversion = struct
 		| DTSwitch({eexpr = TMeta((Meta.Exhaustive,_,_),_)},[_,dt],None) ->
 			convert_dt cctx dt
 		| DTSwitch(e_st,cl,dto) ->
-			let def = match dto with None -> None | Some dt -> Some (convert_dt cctx dt) in
+			let def = match dto with
+				| None ->
+					None
+				| Some dt ->
+					let e = convert_dt cctx dt in
+					let e = if cctx.ctx.in_macro then e else replace_locals e in
+					Some e
+			in
 			let cases = group_cases cl in
 			let cases = List.map (fun (cl,dt) ->
 				let e = convert_dt cctx dt in
@@ -1113,7 +1186,7 @@ let detect_usage com =
 	) !usage in
 	raise (Typecore.DisplayPosition usage)
 
-let update_cache_dependencies com =
+let update_cache_dependencies t =
 	let rec check_t m t = match t with
 		| TInst(c,tl) ->
 			add_dependency m c.cl_module;
@@ -1146,14 +1219,13 @@ let update_cache_dependencies com =
 	and check_field m cf =
 		check_t m cf.cf_type
 	in
-	List.iter (fun t -> match t with
+	match t with
 		| TClassDecl c ->
 			List.iter (check_field c.cl_module) c.cl_ordered_statics;
 			List.iter (check_field c.cl_module) c.cl_ordered_fields;
 			(match c.cl_constructor with None -> () | Some cf -> check_field c.cl_module cf);
 		| _ ->
 			()
-	) com.types
 
 (* -------------------------------------------------------------------------- *)
 (* STACK MANAGEMENT EMULATION *)
@@ -1436,22 +1508,26 @@ let make_valid_filename s =
 	let r = Str.regexp "[^A-Za-z0-9_\\-\\.,]" in
 	Str.global_substitute r (fun s -> "_") s
 
-(*
-	Make a dump of the full typed AST of all types
-*)
-let rec create_dumpfile acc = function
+let rec create_file ext acc = function
 	| [] -> assert false
 	| d :: [] ->
 		let d = make_valid_filename d in
-		let ch = open_out (String.concat "/" (List.rev (d :: acc)) ^ ".dump") in
-		let buf = Buffer.create 0 in
-		buf, (fun () ->
-			output_string ch (Buffer.contents buf);
-			close_out ch)
+		let ch = open_out (String.concat "/" (List.rev (d :: acc)) ^ ext) in
+		ch
 	| d :: l ->
 		let dir = String.concat "/" (List.rev (d :: acc)) in
 		if not (Sys.file_exists dir) then Unix.mkdir dir 0o755;
-		create_dumpfile (d :: acc) l
+		create_file ext (d :: acc) l
+
+(*
+	Make a dump of the full typed AST of all types
+*)
+let create_dumpfile acc l =
+	let ch = create_file ".dump" acc l in
+	let buf = Buffer.create 0 in
+	buf, (fun () ->
+		output_string ch (Buffer.contents buf);
+		close_out ch)
 
 let dump_types com =
 	let s_type = s_type (Type.print_context()) in
@@ -1487,12 +1563,12 @@ let dump_types com =
 			| Some f -> print_field false f);
 			List.iter (print_field false) c.cl_ordered_fields;
 			List.iter (print_field true) c.cl_ordered_statics;
-            (match c.cl_init with
-            | None -> ()
-            | Some e ->
-                print "\n\n\t__init__ = ";
-                print "%s" (s_expr s_type e);
-                print "}\n");
+			(match c.cl_init with
+			| None -> ()
+			| Some e ->
+				print "\n\n\t__init__ = ";
+				print "%s" (s_expr s_type e);
+				print "}\n");
 			print "}";
 		| Type.TEnumDecl e ->
 			print "%s%senum %s%s {\n" (if e.e_private then "private " else "") (if e.e_extern then "extern " else "") (s_type_path path) (params e.e_params);
@@ -1779,16 +1855,18 @@ module UnificationCallback = struct
 		| _ ->
 			List.map (fun e -> f e t_dynamic) el
 
-	let rec run f e =
+	let rec run ff e =
 		let f e t =
-			(* TODO: I don't think this should cause errors on Flash target *)
-			(* if not (type_iseq e.etype t) then f e t else e *)
-			f e t
+			if not (type_iseq e.etype t) then
+				ff e t
+			else
+				e
 		in
 		let check e = match e.eexpr with
-			| TBinop((OpAssign | OpAssignOp _ as op),e1,e2) ->
+			| TBinop((OpAssign | OpAssignOp _),e1,e2) ->
+				assert false; (* this trigger #4347, to be fixed before enabling
 				let e2 = f e2 e1.etype in
-				{e with eexpr = TBinop(op,e1,e2)}
+				{e with eexpr = TBinop(op,e1,e2)} *)
 			| TVar(v,Some ev) ->
 				let eo = Some (f ev v.v_type) in
 				{ e with eexpr = TVar(v,eo) }
@@ -1838,7 +1916,7 @@ module UnificationCallback = struct
 				tf_stack := List.tl !tf_stack;
 				etf
 			| _ ->
-				check (Type.map_expr (run f) e)
+				check (Type.map_expr (run ff) e)
 end;;
 
 module DeprecationCheck = struct
@@ -1942,17 +2020,66 @@ let interpolate_code com code tl f_string f_expr p =
 			f_string a;
 			loop tl
 		| Str.Delim "{" :: Str.Text n :: Str.Delim "}" :: tl ->
-			(try
+			begin try
 				let expr = Array.get exprs (int_of_string n) in
 				f_expr expr;
-				i := !i + 2 + String.length n;
-				loop tl
 			with
 			| Failure "int_of_string" ->
-				err ("Index expected. Got " ^ n)
+				f_string ("{" ^ n ^ "}");
 			| Invalid_argument _ ->
-				err ("Out-of-bounds special parameter: " ^ n))
-			| Str.Delim x :: _ ->
-				err ("Unexpected " ^ x)
+				err ("Out-of-bounds special parameter: " ^ n)
+			end;
+			i := !i + 2 + String.length n;
+			loop tl
+		| Str.Delim x :: tl ->
+			f_string x;
+			incr i;
+			loop tl
 	in
 	loop (Str.full_split regex code)
+
+let map_source_header com f =
+	match Common.defined_value_safe com Define.SourceHeader with
+	| "" -> ()
+	| s -> f s
+
+(* Collection of functions that return expressions *)
+module ExprBuilder = struct
+	let make_static_this c p =
+		let ta = TAnon { a_fields = c.cl_statics; a_status = ref (Statics c) } in
+		mk (TTypeExpr (TClassDecl c)) ta p
+
+	let make_int com i p =
+		mk (TConst (TInt (Int32.of_int i))) com.basic.tint p
+
+	let make_float com f p =
+		mk (TConst (TFloat f)) com.basic.tfloat p
+
+	let make_null t p =
+		mk (TConst TNull) t p
+
+	let make_local v p =
+		mk (TLocal v) v.v_type p
+
+	let make_const_texpr com ct p = match ct with
+		| TString s -> mk (TConst (TString s)) com.basic.tstring p
+		| TInt i -> mk (TConst (TInt i)) com.basic.tint p
+		| TFloat f -> mk (TConst (TFloat f)) com.basic.tfloat p
+		| TBool b -> mk (TConst (TBool b)) com.basic.tbool p
+		| TNull -> mk (TConst TNull) (com.basic.tnull (mk_mono())) p
+		| _ -> error "Unsupported constant" p
+end
+
+(* Static extensions for classes *)
+module ExtClass = struct
+
+	let add_cl_init c e = match c.cl_init with
+			| None -> c.cl_init <- Some e
+			| Some e' -> c.cl_init <- Some (concat e' e)
+
+	let add_static_init c cf e p =
+		let ethis = ExprBuilder.make_static_this c p in
+		let ef1 = mk (TField(ethis,FStatic(c,cf))) cf.cf_type p in
+		let e_assign = mk (TBinop(OpAssign,ef1,e)) e.etype p in
+		add_cl_init c e_assign
+end

@@ -1,5 +1,5 @@
 /*
- * Copyright (C)2005-2012 Haxe Foundation
+ * Copyright (C)2005-2016 Haxe Foundation
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -229,6 +229,11 @@ typedef ClassField = {
 		The associated documentation of the class field.
 	**/
 	var doc : Null<String>;
+
+	/**
+		The overload fields of the class field.
+	**/
+	var overloads : Ref<Array<ClassField>>;
 }
 
 /**
@@ -505,6 +510,12 @@ typedef AbstractType = {>BaseType,
 		The defined array-access fields of the abstract.
 	**/
 	var array : Array<ClassField>;
+
+	/**
+		The method used for resolving unknown field access, if available.
+	**/
+	@:require(haxe_ver >= 3.3)
+	var resolve : Null<ClassField>;
 }
 
 /**
@@ -523,7 +534,7 @@ typedef MetaAccess = {
 	/**
 		Extract metadata entries by given `name`.
 
-		If there's no metadata with such name, empty array is returned.
+		If there's no metadata with such name, empty array `[]` is returned.
 
 		If `name` is null, compilation fails with an error.
 	**/

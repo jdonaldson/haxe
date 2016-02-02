@@ -1,23 +1,20 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2016  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 type pos = {
@@ -39,6 +36,7 @@ module Meta = struct
 		| Annotation
 		| ArrayAccess
 		| Ast
+		| AstSource
 		| AutoBuild
 		| Bind
 		| Bitmap
@@ -50,6 +48,7 @@ module Meta = struct
 		| ClassCode
 		| Commutative
 		| CompilerGenerated
+		| Const
 		| CoreApi
 		| CoreType
 		| CppFileCode
@@ -77,6 +76,7 @@ module Meta = struct
 		| FlatEnum
 		| Font
 		| Forward
+		| ForwardStatics
 		| From
 		| FunctionCode
 		| FunctionTailCode
@@ -130,6 +130,7 @@ module Meta = struct
 		| NotNull
 		| NoUsing
 		| Ns
+		| Objc
 		| Op
 		| Optional
 		| Overload
@@ -138,6 +139,7 @@ module Meta = struct
 		| Protected
 		| Public
 		| PublicFields
+		| Pure
 		| QuotedField
 		| ReadOnly
 		| RealPath
@@ -367,6 +369,7 @@ and type_param = {
 	tp_name : string;
 	tp_params :	type_param list;
 	tp_constraints : complex_type list;
+	tp_meta : metadata;
 }
 
 and documentation = string option
@@ -438,12 +441,14 @@ type import_mode =
 	| IAsName of string
 	| IAll
 
+type import = (string * pos) list * import_mode
+
 type type_def =
 	| EClass of (class_flag, class_field list) definition
 	| EEnum of (enum_flag, enum_constructor list) definition
 	| ETypedef of (enum_flag, complex_type) definition
 	| EAbstract of (abstract_flag, class_field list) definition
-	| EImport of (string * pos) list * import_mode
+	| EImport of import
 	| EUsing of type_path
 
 type type_decl = type_def * pos
@@ -464,8 +469,8 @@ let is_lower_ident i =
 let pos = snd
 
 let rec is_postfix (e,_) op = match op with
-	| Increment | Decrement -> true
-	| Not | Neg | NegBits -> false
+	| Increment | Decrement | Not -> true
+	| Neg | NegBits -> false
 
 let is_prefix = function
 	| Increment | Decrement -> true
@@ -702,7 +707,7 @@ let map_expr loop (e,p) =
 		| CTExtend (tl,fl) -> CTExtend (List.map tpath tl, List.map cfield fl)
 		| CTOptional t -> CTOptional (ctype t)
 	and tparamdecl t =
-		{ tp_name = t.tp_name; tp_constraints = List.map ctype t.tp_constraints; tp_params = List.map tparamdecl t.tp_params }
+		{ tp_name = t.tp_name; tp_constraints = List.map ctype t.tp_constraints; tp_params = List.map tparamdecl t.tp_params; tp_meta = t.tp_meta }
 	and func f =
 		{
 			f_params = List.map tparamdecl f.f_params;
@@ -869,6 +874,8 @@ let get_value_meta meta =
 	with Not_found ->
 		PMap.empty
 
+(* Type path related functions *)
+
 let rec string_list_of_expr_path_raise (e,p) =
 	match e with
 	| EConst (Ident i) -> [i]
@@ -882,3 +889,27 @@ let expr_of_type_path (sl,s) p =
 		let e1 = (EConst(Ident s1),p) in
 		let e = List.fold_left (fun e s -> (EField(e,s),p)) e1 sl in
 		EField(e,s),p
+
+let match_path recursive sl sl_pattern =
+	let rec loop sl1 sl2 = match sl1,sl2 with
+		| [],[] ->
+			true
+		(* always recurse into types of package paths *)
+		| (s1 :: s11 :: _),[s2] when is_lower_ident s2 && not (is_lower_ident s11)->
+			s1 = s2
+		| [_],[""] ->
+			true
+		| _,([] | [""]) ->
+			recursive
+		| [],_ ->
+			false
+		| (s1 :: sl1),(s2 :: sl2) ->
+			s1 = s2 && loop sl1 sl2
+	in
+	loop sl sl_pattern
+
+let full_dot_path mpath tpath =
+	if mpath = tpath then
+		(fst tpath) @ [snd tpath]
+	else
+		(fst mpath) @ [snd mpath;snd tpath]

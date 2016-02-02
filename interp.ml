@@ -1,23 +1,20 @@
 (*
- * Copyright (C)2005-2013 Haxe Foundation
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
+	The Haxe Compiler
+	Copyright (C) 2005-2016  Haxe Foundation
+
+	This program is free software; you can redistribute it and/or
+	modify it under the terms of the GNU General Public License
+	as published by the Free Software Foundation; either version 2
+	of the License, or (at your option) any later version.
+
+	This program is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
+
+	You should have received a copy of the GNU General Public License
+	along with this program; if not, write to the Free Software
+	Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *)
 
 open Common
@@ -106,6 +103,7 @@ type extern_api = {
 	on_type_not_found : (string -> value) -> unit;
 	parse_string : string -> Ast.pos -> bool -> Ast.expr;
 	type_expr : Ast.expr -> Type.texpr;
+	type_macro_expr : Ast.expr -> Type.texpr;
 	store_typed_expr : Type.texpr -> Ast.expr;
 	get_display : string -> string;
 	allow_package : string -> unit;
@@ -116,6 +114,7 @@ type extern_api = {
 	get_expected_type : unit -> t option;
 	get_call_arguments : unit -> Ast.expr list option;
 	get_local_method : unit -> string;
+	get_local_imports : unit -> Ast.import list;
 	get_local_using : unit -> tclass list;
 	get_local_vars : unit -> (string, Type.tvar) PMap.t;
 	get_build_fields : unit -> value;
@@ -124,6 +123,7 @@ type extern_api = {
 	define_module : string -> value list -> ((string * Ast.pos) list * Ast.import_mode) list -> Ast.type_path list -> unit;
 	module_dependency : string -> string -> bool -> unit;
 	current_module : unit -> module_def;
+	mutable current_macro_module : unit -> module_def;
 	delayed_macro : int -> (unit -> (unit -> value));
 	use_cache : unit -> bool;
 	format_string : string -> Ast.pos -> Ast.expr;
@@ -207,11 +207,11 @@ let enc_hash_ref = ref (fun h -> assert false)
 let enc_array_ref = ref (fun l -> assert false)
 let dec_array_ref = ref (fun v -> assert false)
 let enc_string_ref = ref (fun s -> assert false)
-let make_ast_ref = ref (fun _ -> assert false)
-let make_complex_type_ref = ref (fun _ -> assert false)
 let encode_tvar_ref = ref (fun _ -> assert false)
 let decode_path_ref = ref (fun _ -> assert false)
 let decode_import_ref = ref (fun _ -> assert false)
+let encode_import_ref = ref (fun _ -> assert false)
+let eval_expr_ref : (context -> texpr -> value option) ref = ref (fun _ _ -> assert false)
 let get_ctx() = (!get_ctx_ref)()
 let enc_array (l:value list) : value = (!enc_array_ref) l
 let dec_array (l:value) : value list = (!dec_array_ref) l
@@ -224,12 +224,11 @@ let encode_texpr (e:Type.texpr) : value = (!encode_texpr_ref) e
 let decode_texpr (v:value) : Type.texpr = (!decode_texpr_ref) v
 let encode_clref (c:tclass) : value = (!encode_clref_ref) c
 let enc_hash (h:('a,'b) Hashtbl.t) : value = (!enc_hash_ref) h
-let make_ast (e:texpr) : Ast.expr = (!make_ast_ref) e
 let enc_string (s:string) : value = (!enc_string_ref) s
-let make_complex_type (t:Type.t) : Ast.complex_type = (!make_complex_type_ref) t
 let encode_tvar (v:tvar) : value = (!encode_tvar_ref) v
 let decode_path (v:value) : Ast.type_path = (!decode_path_ref) v
-let decode_import (v:value) : ((string * Ast.pos) list * Ast.import_mode) = (!decode_import_ref) v
+let encode_import (i:Ast.import) : value = (!encode_import_ref) i
+let decode_import (v:value) : Ast.import = (!decode_import_ref) v
 
 let to_int f = Int32.of_float (mod_float f 2147483648.0)
 let need_32_bits i = Int32.compare (Int32.logand (Int32.add i 0x40000000l) 0x80000000l) Int32.zero <> 0
@@ -276,8 +275,8 @@ let constants =
 	"$";"add";"remove";"has";"__t";"module";"isPrivate";"isPublic";"isExtern";"isInterface";"exclude";
 	"constructs";"names";"superClass";"interfaces";"fields";"statics";"constructor";"init";"t";
 	"gid";"uid";"atime";"mtime";"ctime";"dev";"ino";"nlink";"rdev";"size";"mode";"pos";"len";
-	"binops";"unops";"from";"to";"array";"op";"isPostfix";"impl";
-	"id";"capture";"extra";"v";"ids";"vars";"en";"overrides";"status"];
+	"binops";"unops";"from";"to";"array";"op";"isPostfix";"impl";"resolve";
+	"id";"capture";"extra";"v";"ids";"vars";"en";"overrides";"status";"overloads";"path"];
 	h
 
 let h_get = hash "__get" and h_set = hash "__set"
@@ -491,14 +490,35 @@ type neko_context = {
 	call : primitive -> value list -> value;
 }
 
+(* try to load dl in order *)
+let rec dlopen dls =
+	let null = Extc.dlint 0 in
+	match dls with
+	| dl_path :: dls ->
+		let dl = Extc.dlopen dl_path in
+		if (Obj.magic dl) == null then
+			dlopen dls
+		else
+			Some dl;
+	| _ ->
+		None
+
 let neko =
 	let is_win = Sys.os_type = "Win32" || Sys.os_type = "Cygwin" in
-	let neko = Extc.dlopen (if is_win then "neko.dll" else "libneko.so") in
-	let null = Extc.dlint 0 in
-	let neko = if Obj.magic neko == null && not is_win then Extc.dlopen "libneko.dylib" else neko in
-	if Obj.magic neko == null then
-		None
+	match dlopen (if is_win then
+		["neko.dll"]
 	else
+		(*
+			By defualt, the makefile of neko produces libneko.so,
+			however, the debian package creates libneko.so.0 without libneko.so...
+			The fedora rpm package creates libneko.so linked to libneko.so.1.
+		*)
+		["libneko.so"; "libneko.so.0"; "libneko.so.1"; "libneko.so.2"; "libneko.dylib"]
+	) with
+	| None ->
+		None
+	| Some(neko) ->
+	let null = Extc.dlint 0 in
 	let load v =
 		let s = Extc.dlsym neko v in
 		if (Obj.magic s) == null then failwith ("Could not load neko." ^ v);
@@ -1842,7 +1862,8 @@ let std_lib =
 	(* process *)
 		"process_run", (Fun2 (fun p args ->
 			match p, args with
-			| VString p, VArray args -> VAbstract (AProcess (Process.run p (Array.map vstring args)))
+			| VString p, VArray args -> VAbstract (AProcess (Process.run p (Some (Array.map vstring args))))
+			| VString p, _ -> VAbstract (AProcess (Process.run p None))
 			| _ -> error()
 		));
 		"process_stdout_read", (Fun4 (fun p str pos len ->
@@ -2212,7 +2233,7 @@ let macro_lib =
 		);
 		"on_generate", Fun1 (fun f ->
 			match f with
-			| VFunction (Fun1 _) ->
+			| VFunction (Fun1 _) | VClosure _ ->
 				let ctx = get_ctx() in
 				ctx.curapi.on_generate (fun tl ->
 					ignore(catch_errors ctx (fun() -> ctx.do_call VNull f [enc_array (List.map encode_type tl)] null_pos));
@@ -2393,7 +2414,7 @@ let macro_lib =
 			VString (Digest.to_hex (Digest.string (Marshal.to_string v [Marshal.Closures])))
 		);
 		"to_complex", Fun1 (fun v ->
-			try	encode_complex_type (make_complex_type (decode_type v))
+			try	encode_complex_type (TExprToExpr.convert_type (decode_type v))
 			with Exit -> VNull
 		);
 		"unify", Fun2 (fun t1 t2 ->
@@ -2485,7 +2506,8 @@ let macro_lib =
 			match name, data with
 			| VString name, VString data ->
 				Hashtbl.replace (ccom()).resources name data;
-				let m = (get_ctx()).curapi.current_module() in
+				if name = "" then failwith "Empty resource name";
+				let m = if name.[0] = '$' then (get_ctx()).curapi.current_macro_module() else (get_ctx()).curapi.current_module() in
 				m.m_extra.m_binded_res <- PMap.add name data m.m_extra.m_binded_res;
 				VNull
 			| _ -> error()
@@ -2521,6 +2543,9 @@ let macro_lib =
 		"local_using", Fun0 (fun() ->
 			enc_array (List.map encode_clref ((get_ctx()).curapi.get_local_using()))
 		);
+		"local_imports", Fun0 (fun() ->
+			enc_array (List.map encode_import ((get_ctx()).curapi.get_local_imports()))
+		);
 		"local_vars", Fun1 (fun as_var ->
 			let as_var = match as_var with
 				| VNull | VBool false -> false
@@ -2534,6 +2559,25 @@ let macro_lib =
 			else
 				PMap.iter (fun n v -> Hashtbl.replace h (VString n) (encode_type v.v_type)) vars;
 			enc_hash h
+		);
+		"follow_with_abstracts", Fun2 (fun v once ->
+			let t = decode_type v in
+			let follow_once t =
+				match t with
+				| TMono r ->
+					(match !r with
+					| None -> t
+					| Some t -> t)
+				| TAbstract (a,tl) when not (Ast.Meta.has Ast.Meta.CoreType a.a_meta) ->
+					Abstract.get_underlying_type a tl
+				| TAbstract _ | TEnum _ | TInst _ | TFun _ | TAnon _ | TDynamic _ ->
+					t
+				| TType (t,tl) ->
+					apply_params t.t_params tl t.t_type
+				| TLazy f ->
+					(!f)()
+			in
+			encode_type (match once with VNull | VBool false -> Abstract.follow_with_abstracts t | VBool true -> follow_once t | _ -> error())
 		);
 		"follow", Fun2 (fun v once ->
 			let t = decode_type v in
@@ -2571,7 +2615,13 @@ let macro_lib =
 			match v with
 			| VString cp ->
 				let com = ccom() in
-				com.class_path <- (Common.normalize_path cp) :: com.class_path;
+				let norm_path = Common.normalize_path cp in
+				com.class_path <- norm_path :: com.class_path;
+				(match com.get_macros() with
+					| Some(mcom) ->
+						mcom.class_path <- norm_path :: com.class_path;
+					| None ->
+						());
 				Hashtbl.clear com.file_lookup_cache;
 				VNull
 			| _ ->
@@ -2626,7 +2676,7 @@ let macro_lib =
 		);
 		"get_typed_expr", Fun1 (fun e ->
 			let e = decode_texpr e in
-			encode_expr (make_ast e)
+			encode_expr (TExprToExpr.convert_expr e)
 		);
 		"store_typed_expr", Fun1 (fun e ->
 			let e = try decode_texpr e with Invalid_expr -> error() in
@@ -2683,6 +2733,27 @@ let macro_lib =
 			in
 			encode_type (apply_params tpl tl (map (decode_type t)))
 		);
+		"eval", Fun1 (fun v ->
+			let e = decode_expr v in
+			let e = ((get_ctx()).curapi.type_macro_expr e) in
+ 			match !eval_expr_ref (get_ctx()) e with
+			| Some v -> v
+			| None -> VNull
+		);
+		"include_file", Fun2 (fun file position ->
+			match file, position with
+			| VString file, VString position ->
+				let file = if Sys.file_exists file then
+					file
+				else try Common.find_file (ccom()) file with
+					| Not_found ->
+						failwith ("unable to find file for inclusion: " ^ file)
+				in
+				(ccom()).include_files <- (file, position) :: (ccom()).include_files;
+				VNull
+			| _ ->
+				error()
+		);
 	]
 
 (* ---------------------------------------------------------------------- *)
@@ -2726,7 +2797,11 @@ let get_ident ctx s =
 
 let no_env = [||]
 
-let rec eval ctx (e,p) =
+let rec eval_expr ctx e =
+	let e = Genneko.gen_expr ctx.gen e in
+	catch_errors ctx (fun() -> (eval ctx e)())
+
+and eval ctx (e,p) =
 	match e with
 	| EConst c ->
 		(match c with
@@ -3359,8 +3434,8 @@ and eval_op ctx op e1 e2 p =
 		let e2 = eval ctx e2 in
 		(fun() ->
 			match e1() with
-			| VBool false as v -> v
-			| _ -> e2())
+			| VBool true -> e2()
+			| _ -> VBool false)
 	| "||" ->
 		let e1 = eval ctx e1 in
 		let e2 = eval ctx e2 in
@@ -3466,7 +3541,7 @@ let rec to_string ctx n v =
 			Buffer.contents b
 
 let rec compare ctx a b =
-	let fcmp (a:float) b = if a = b then CEq else if a < b then CInf else CSup in
+	let fcmp (a:float) b = if a = b then CEq else if a < b then CInf else if a > b then CSup else CUndef in
 	let scmp (a:string) b = if a = b then CEq else if a < b then CInf else CSup in
 	let icmp (a:int32) b = let l = Int32.compare a b in if l = 0 then CEq else if l < 0 then CInf else CSup in
 	match a, b with
@@ -3601,20 +3676,21 @@ let can_reuse ctx types =
 	end
 
 let add_types ctx types ready =
-	let types = List.filter (fun t ->
-		let path = Type.t_path t in
-		if Hashtbl.mem ctx.types path then false else begin
-			Hashtbl.add ctx.types path (Type.t_infos t).mt_module.m_id;
-			true;
-		end
+	let types = List.filter (fun t -> match t with
+		| TAbstractDecl a when not (Ast.Meta.has Ast.Meta.CoreType a.a_meta) ->
+			(* A @:native on an abstract causes the implementation class and the abstract
+			   to have the same path. Let's skip all abstracts so this doesn't matter. *)
+			false
+		| _ ->
+			let path = Type.t_path t in
+			if Hashtbl.mem ctx.types path then false else begin
+				Hashtbl.add ctx.types path (Type.t_infos t).mt_module.m_id;
+				true;
+			end
 	) types in
 	List.iter ready types;
 	let e = (EBlock (Genneko.build ctx.gen types), null_pos) in
 	ignore(catch_errors ctx (fun() -> ignore((eval ctx e)())))
-
-let eval_expr ctx e =
-	let e = Genneko.gen_expr ctx.gen e in
-	catch_errors ctx (fun() -> (eval ctx e)())
 
 let get_path ctx path p =
 	let rec loop = function
@@ -3663,6 +3739,7 @@ type enum_index =
 	| IModuleType
 	| IFieldAccess
 	| IAnonStatus
+	| IImportMode
 
 let enum_name = function
 	| IExpr -> "ExprDef"
@@ -3683,9 +3760,10 @@ let enum_name = function
 	| IModuleType -> "ModuleType"
 	| IFieldAccess -> "FieldAccess"
 	| IAnonStatus -> "AnonStatus"
+	| IImportMode -> "ImportMode"
 
 let init ctx =
-	let enums = [IExpr;IBinop;IUnop;IConst;ITParam;ICType;IField;IType;IFieldKind;IMethodKind;IVarAccess;IAccess;IClassKind;ITypedExpr;ITConstant;IModuleType;IFieldAccess;IAnonStatus] in
+	let enums = [IExpr;IBinop;IUnop;IConst;ITParam;ICType;IField;IType;IFieldKind;IMethodKind;IVarAccess;IAccess;IClassKind;ITypedExpr;ITConstant;IModuleType;IFieldAccess;IAnonStatus;IImportMode] in
 	let get_enum_proto e =
 		match get_path ctx ["haxe";"macro";enum_name e] null_pos with
 		| VObject e ->
@@ -3810,6 +3888,18 @@ let encode_unop op =
 	in
 	enc_enum IUnop tag []
 
+let encode_import (path,mode) =
+	let tag,pl = match mode with
+		| INormal -> 0, []
+		| IAsName s -> 1, [enc_string s]
+		| IAll -> 2,[]
+	in
+	let mode = enc_enum IImportMode tag pl in
+	enc_obj [
+		"path", enc_array (List.map (fun (name,p) -> enc_obj [ "pos", encode_pos p; "name", enc_string name]) path);
+		"mode", mode
+	]
+
 let rec encode_path t =
 	let fields = [
 		"pack", enc_array (List.map enc_string t.tpackage);
@@ -3883,6 +3973,7 @@ and encode_tparam_decl tp =
 		"name", enc_string tp.tp_name;
 		"params", enc_array (List.map encode_tparam_decl tp.tp_params);
 		"constraints", enc_array (List.map encode_ctype tp.tp_constraints);
+		"meta", encode_meta_content tp.tp_meta;
 	]
 
 and encode_fun f =
@@ -4119,6 +4210,7 @@ and decode_tparam_decl v =
 		tp_name = dec_string (field v "name");
 		tp_constraints = (match field v "constraints" with VNull -> [] | a -> List.map decode_ctype (dec_array a));
 		tp_params = decode_tparams (field v "params");
+		tp_meta = decode_meta_content (field v "meta");
 	}
 
 and decode_fun v =
@@ -4371,6 +4463,7 @@ and encode_tabstract a =
 		"from", enc_array ((List.map (fun t -> enc_obj [ "t",encode_type t; "field",VNull]) a.a_from) @ (List.map (fun (t,cf) -> enc_obj [ "t",encode_type t; "field",encode_cfield cf]) a.a_from_field));
 		"to", enc_array ((List.map (fun t -> enc_obj [ "t",encode_type t; "field",VNull]) a.a_to) @ (List.map (fun (t,cf) -> enc_obj [ "t",encode_type t; "field",encode_cfield cf]) a.a_to_field));
 		"array", enc_array (List.map encode_cfield a.a_array);
+		"resolve", (match a.a_resolve with None -> VNull | Some cf -> encode_cfref cf)
 	]
 
 and encode_efield f =
@@ -4395,6 +4488,7 @@ and encode_cfield f =
 		"kind", encode_field_kind f.cf_kind;
 		"pos", encode_pos f.cf_pos;
 		"doc", null enc_string f.cf_doc;
+		"overloads", encode_ref f.cf_overloads (encode_array encode_cfield) (fun() -> "overloads");
 	]
 
 and encode_field_kind k =
@@ -4759,7 +4853,7 @@ let decode_cfield v =
 		cf_kind = decode_field_kind (field v "kind");
 		cf_params = decode_type_params (field v "params");
 		cf_expr = None;
-		cf_overloads = [];
+		cf_overloads = decode_ref (field v "overloads");
 	}
 
 let decode_efield v =
@@ -4938,156 +5032,9 @@ let rec make_const e =
 (* ---------------------------------------------------------------------- *)
 (* TEXPR-TO-AST-EXPR *)
 
-open Ast
 
-let tpath p mp pl =
-	if snd mp = snd p then
-		CTPath {
-			tpackage = fst p;
-			tname = snd p;
-			tparams = List.map (fun t -> TPType t) pl;
-			tsub = None;
-		}
-	else CTPath {
-			tpackage = fst mp;
-			tname = snd mp;
-			tparams = List.map (fun t -> TPType t) pl;
-			tsub = Some (snd p);
-		}
-
-let rec make_type = function
-	| TMono r ->
-		(match !r with
-		| None -> raise Exit
-		| Some t -> make_type t)
-	| TEnum (e,pl) ->
-		tpath e.e_path e.e_module.m_path (List.map make_type pl)
-	| TInst({cl_kind = KTypeParameter _} as c,pl) ->
-		tpath ([],snd c.cl_path) ([],snd c.cl_path) (List.map make_type pl)
-	| TInst (c,pl) ->
-		tpath c.cl_path c.cl_module.m_path (List.map make_type pl)
-	| TType (t,pl) as tf ->
-		(* recurse on type-type *)
-		if (snd t.t_path).[0] = '#' then make_type (follow tf) else tpath t.t_path t.t_module.m_path (List.map make_type pl)
-	| TAbstract (a,pl) ->
-		tpath a.a_path a.a_module.m_path (List.map make_type pl)
-	| TFun (args,ret) ->
-		CTFunction (List.map (fun (_,_,t) -> make_type t) args, make_type ret)
-	| TAnon a ->
-		begin match !(a.a_status) with
-		| Statics c -> tpath ([],"Class") ([],"Class") [tpath c.cl_path c.cl_path []]
-		| EnumStatics e -> tpath ([],"Enum") ([],"Enum") [tpath e.e_path e.e_path []]
-		| _ ->
-			CTAnonymous (PMap.foldi (fun _ f acc ->
-				{
-					cff_name = f.cf_name;
-					cff_kind = FVar (mk_ot f.cf_type,None);
-					cff_pos = f.cf_pos;
-					cff_doc = f.cf_doc;
-					cff_meta = f.cf_meta;
-					cff_access = [];
-				} :: acc
-			) a.a_fields [])
-		end
-	| (TDynamic t2) as t ->
-		tpath ([],"Dynamic") ([],"Dynamic") (if t == t_dynamic then [] else [make_type t2])
-	| TLazy f ->
-		make_type ((!f)())
-
-and mk_ot t =
-	match follow t with
-	| TMono _ -> None
-	| _ -> (try Some (make_type t) with Exit -> None)
-
-let rec make_ast e =
-	let full_type_path t =
-		let mp,p = match t with
-		| TClassDecl c -> c.cl_module.m_path,c.cl_path
-		| TEnumDecl en -> en.e_module.m_path,en.e_path
-		| TAbstractDecl a -> a.a_module.m_path,a.a_path
-		| TTypeDecl t -> t.t_module.m_path,t.t_path
-		in
-		if snd mp = snd p then p else (fst mp) @ [snd mp],snd p
-	in
-	let mk_path (pack,name) p =
-		match List.rev pack with
-		| [] -> (EConst (Ident name),p)
-		| pl ->
-			let rec loop = function
-				| [] -> assert false
-				| [n] -> (EConst (Ident n),p)
-				| n :: l -> (EField (loop l, n),p)
-			in
-			(EField (loop pl,name),p)
-	in
-	let mk_const = function
-		| TInt i -> Int (Int32.to_string i)
-		| TFloat s -> Float s
-		| TString s -> String s
-		| TBool b -> Ident (if b then "true" else "false")
-		| TNull -> Ident "null"
-		| TThis -> Ident "this"
-		| TSuper -> Ident "super"
-	in
-	let mk_ident = function
-		| "`trace" -> Ident "trace"
-		| n -> Ident n
-	in
-	let eopt = function None -> None | Some e -> Some (make_ast e) in
-	((match e.eexpr with
-	| TConst c ->
-		EConst (mk_const c)
-	| TLocal v -> EConst (mk_ident v.v_name)
-	| TArray (e1,e2) -> EArray (make_ast e1,make_ast e2)
-	| TBinop (op,e1,e2) -> EBinop (op, make_ast e1, make_ast e2)
-	| TField (e,f) -> EField (make_ast e, Type.field_name f)
-	| TTypeExpr t -> fst (mk_path (full_type_path t) e.epos)
-	| TParenthesis e -> EParenthesis (make_ast e)
-	| TObjectDecl fl -> EObjectDecl (List.map (fun (f,e) -> f, make_ast e) fl)
-	| TArrayDecl el -> EArrayDecl (List.map make_ast el)
-	| TCall (e,el) -> ECall (make_ast e,List.map make_ast el)
-	| TNew (c,pl,el) -> ENew ((match (try make_type (TInst (c,pl)) with Exit -> make_type (TInst (c,[]))) with CTPath p -> p | _ -> assert false),List.map make_ast el)
-	| TUnop (op,p,e) -> EUnop (op,p,make_ast e)
-	| TFunction f ->
-		let arg (v,c) = v.v_name, false, mk_ot v.v_type, (match c with None -> None | Some c -> Some (EConst (mk_const c),e.epos)) in
-		EFunction (None,{ f_params = []; f_args = List.map arg f.tf_args; f_type = mk_ot f.tf_type; f_expr = Some (make_ast f.tf_expr) })
-	| TVar (v,eo) ->
-		EVars ([v.v_name, mk_ot v.v_type, eopt eo])
-	| TBlock el -> EBlock (List.map make_ast el)
-	| TFor (v,it,e) ->
-		let ein = (EIn ((EConst (Ident v.v_name),it.epos),make_ast it),it.epos) in
-		EFor (ein,make_ast e)
-	| TIf (e,e1,e2) -> EIf (make_ast e,make_ast e1,eopt e2)
-	| TWhile (e1,e2,flag) -> EWhile (make_ast e1, make_ast e2, flag)
-	| TSwitch (e,cases,def) ->
-		let cases = List.map (fun (vl,e) ->
-			List.map make_ast vl,None,(match e.eexpr with TBlock [] -> None | _ -> Some (make_ast e))
-		) cases in
-		let def = match eopt def with None -> None | Some (EBlock [],_) -> Some None | e -> Some e in
-		ESwitch (make_ast e,cases,def)
-	| TEnumParameter _ ->
-		(* these are considered complex, so the AST is handled in TMeta(Meta.Ast) *)
-		assert false
-	| TTry (e,catches) -> ETry (make_ast e,List.map (fun (v,e) -> v.v_name, (try make_type v.v_type with Exit -> assert false), make_ast e) catches)
-	| TReturn e -> EReturn (eopt e)
-	| TBreak -> EBreak
-	| TContinue -> EContinue
-	| TThrow e -> EThrow (make_ast e)
-	| TCast (e,t) ->
-		let t = (match t with
-			| None -> None
-			| Some t ->
-				let t = (match t with TClassDecl c -> TInst (c,[]) | TEnumDecl e -> TEnum (e,[]) | TTypeDecl t -> TType (t,[]) | TAbstractDecl a -> TAbstract (a,[])) in
-				Some (try make_type t with Exit -> assert false)
-		) in
-		ECast (make_ast e,t)
-	| TMeta ((Meta.Ast,[e1,_],_),_) -> e1
-	| TMeta (m,e) -> EMeta(m,make_ast e))
-	,e.epos)
 
 ;;
-make_ast_ref := make_ast;
-make_complex_type_ref := make_type;
 encode_complex_type_ref := encode_ctype;
 enc_array_ref := enc_array;
 dec_array_ref := dec_array;
@@ -5102,4 +5049,7 @@ encode_texpr_ref := encode_texpr;
 decode_texpr_ref := decode_texpr;
 encode_tvar_ref := encode_tvar;
 decode_path_ref := decode_path;
+encode_import_ref := encode_import;
 decode_import_ref := decode_import;
+eval_expr_ref := eval_expr;
+encode_import_ref := encode_import;
