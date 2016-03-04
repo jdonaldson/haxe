@@ -1202,11 +1202,24 @@ and gen_bitop ctx op e1 e2 =
 	gen_value ctx e2;
 	spr ctx ")"
     ) else (
-      gen_value ctx e1;
-      print ctx " %s " (Ast.s_binop op);
-      gen_value ctx e2;
-    )
-
+      (match op with
+	    | Ast.OpShr  ->  (
+		spr ctx "_hx_bit.arshift(";
+		gen_value ctx e1;
+		spr ctx ",";
+		gen_value ctx e2;
+		spr ctx ")")
+	    | Ast.OpUShr  ->  (
+		spr ctx "_hx_bit.rshift(";
+		gen_value ctx e1;
+		spr ctx ",";
+		gen_value ctx e2;
+		spr ctx ")")
+	    | _ -> 
+		gen_value ctx e1;
+		print ctx " %s " (Ast.s_binop op);
+		gen_value ctx e2)
+      );
 and gen_return ctx e eo =
     if ctx.in_value <> None then unsupported e.epos;
     (match eo with

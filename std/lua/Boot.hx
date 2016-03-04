@@ -256,9 +256,7 @@ class Boot {
 			+":"+(if( s < 10 ) "0"+s else ""+s);
 	}
 
-	public static function clamp(x:Int){
-		return (x & 2147483647) - (x & cast 2147483648);
-	}
+	public static inline function clamp(x:Int) return untyped _hx_clamp(x); 
 
 	public static function strDate( s : String ) : std.Date {
 		switch( s.length ) {

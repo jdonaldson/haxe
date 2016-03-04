@@ -14,6 +14,12 @@ extern class Bit {
 	public static function arshift(x:Float, places:Int) : Int;
 	public static function mod(numerator:Float, denominator:Float) : Int;
 	public static function __init__() : Void {
+#if (lua_ver >= 5.3)
+		haxe.macro.Compiler.includeFile("lua/_lua/_hx_clamp53.lua");
+		haxe.macro.Compiler.includeFile("lua/_lua/bitwise.lua");
+#else
+		haxe.macro.Compiler.includeFile("lua/_lua/_hx_clamp.lua");
+#end
 		haxe.macro.Compiler.includeFile("lua/_lua/_hx_bit.lua");
 	}
 }
